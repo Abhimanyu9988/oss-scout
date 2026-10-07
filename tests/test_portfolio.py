@@ -59,8 +59,8 @@ class PortfolioTest(unittest.TestCase):
         self.assertIn("| Merged pull requests | 2 (+71 −2) |", text)
         self.assertIn("| Reviews of others' pull requests | 1 on 1 PR by 1 author |", text)
         self.assertIn("| Maintainers who approved or merged your work | 3 |", text)
-        self.assertIn("Contributor to OpenTelemetry since September 2026: 2 merged pull requests in "
-                      "internal/k8sinventory, receiver/sqlserver, reviewed and accepted by 3 maintainers.", text)
+        self.assertIn("Active in OpenTelemetry since September 2026: 2 merged pull requests in "
+                      "internal/k8sinventory and receiver/sqlserver, reviewed and accepted by 3 maintainers.", text)
         self.assertIn("Resolved 2 reported issues through merged fixes.", text)
         self.assertIn("Reviewed 1 pull request from 1 other contributor (receiver/sqlserver).", text)
         self.assertIn("Gave 1 talk on this work.", text)
@@ -73,8 +73,10 @@ class PortfolioTest(unittest.TestCase):
         self.assertIn("| [TylerHelmuth](https://github.com/TylerHelmuth) | approved your PRs (1) · merged your PRs (1) · "
                       "praised your work (1) |", text)
         self.assertIn("| [Srikar](https://github.com/Srikar) | you reviewed their PRs (1) |", text)
-        self.assertIn("| 2026-11 | 0 | 0 | 0 | 0 | 2 |", text)
-        self.assertIn("| 2026-10 | 1 | 0 | 0 | 0 | 0 |", text)          # #51657 merged in October
+        self.assertIn("| 2026-11 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |", text)
+        self.assertIn("| 2026-10 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |", text)      # #51657 opened in Sep, merged in Oct
+        self.assertIn("| 2026-09 | 3 | 1 | 1 | 1 | 1 | 0 | 0 |", text)
+        self.assertIn("I contribute to OpenTelemetry, mostly internal/k8sinventory and receiver/sqlserver.", text)
         self.assertIn("[opentelemetry-collector-contrib#51657](", text)
         self.assertIn("Document TLS | handshake &lt;issue&gt;", text)
         self.assertIn("## Not yet in a category", text)        # the open PR and the issue have no rule

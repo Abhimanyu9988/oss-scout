@@ -1,3 +1,3 @@
-"""oss-scout: a read-only GitHub scanner that posts a short daily digest to Slack."""
+"""oss-scout: what needs you in open source today, what you've done, and the story it tells."""
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

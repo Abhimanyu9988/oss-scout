@@ -333,6 +333,16 @@ else
   fi
 fi
 
+if [ "$(gh repo view "$REPO" --json visibility --jq .visibility 2>/dev/null)" = "PUBLIC" ]; then
+  VERSION="v$(python3 -c 'import scout; print(scout.__version__)')"
+  if ! git ls-remote --tags origin "$VERSION" 2>/dev/null | grep -q .; then
+    info "Tagging this version lets other people pin it, so later changes can't surprise them."
+    if ask "Tag the current code as $VERSION?"; then
+      git tag -a "$VERSION" -m "oss-scout $VERSION" && git push -q origin "$VERSION" && ok "Tagged $VERSION"
+    fi
+  fi
+fi
+
 # ───────────────────────────────────────────────────────────── 7
 step 7 "Send the first digest"
 
@@ -375,12 +385,37 @@ elif ask "Set it up?"; then
   sed "s#__SCOUT_REPO__#$REPO#" "$ROOT/profile-template/contrib-log.yml" \
     > "$WORK/profile/.github/workflows/contrib-log.yml"
   [ -f "$WORK/profile/annotations.yaml" ] || cp "$ROOT/profile-template/annotations.yaml" "$WORK/profile/annotations.yaml"
-  python3 - "$WORK/profile/contrib-log.config.json" "$HAVE" "$ORGS" "https://github.com/$REPO" <<'PY'
+  LOGCFG="$WORK/profile/contrib-log.config.json"
+  cfg_get() { python3 -c 'import json,os,sys; p=sys.argv[1]; c=json.load(open(p)) if os.path.exists(p) else {}; v=c
+for k in sys.argv[2:]: v=(v or {}).get(k, "")
+print(v or "")' "$LOGCFG" "$@"; }
+  info "Optional: with your ORCID iD the log also lists your publications and peer reviews,"
+  info "with citation counts. Only the public works and peer-review parts of ORCID are read."
+  while :; do
+    ORCID="$(prompt "ORCID iD (Enter to skip)" "$(cfg_get orcid)")"
+    if [ -z "$ORCID" ] || [[ "$ORCID" =~ ^[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{3}[0-9X]$ ]]; then break; fi
+    warn "An ORCID iD looks like 0000-0002-1825-0097."
+  done
+  LINKEDIN="$(prompt "LinkedIn profile URL for a link on your profile (Enter to skip)" "$(cfg_get links LinkedIn)")"
+  python3 - "$LOGCFG" "$HAVE" "$ORGS" "https://github.com/$REPO" "$ORCID" "$LINKEDIN" <<'PY'
 import json, os, sys
-path, user, orgs, tool = sys.argv[1], sys.argv[2], sys.argv[3].split(), sys.argv[4]
+path, user, orgs, tool, orcid, linkedin = sys.argv[1], sys.argv[2], sys.argv[3].split(), sys.argv[4], sys.argv[5], sys.argv[6]
 cfg = json.load(open(path)) if os.path.exists(path) else {}
 cfg.update({"github_user": user, "orgs": orgs, "tool_url": tool})
 cfg.setdefault("repos", [])
+if orcid:
+    cfg["orcid"] = orcid
+else:
+    cfg.pop("orcid", None)
+links = cfg.get("links") or {}
+if linkedin:
+    links["LinkedIn"] = linkedin
+else:
+    links.pop("LinkedIn", None)
+if links:
+    cfg["links"] = links
+else:
+    cfg.pop("links", None)
 with open(path, "w") as fh:
     json.dump(cfg, fh, indent=2)
     fh.write("\n")

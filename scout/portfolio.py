@@ -17,7 +17,7 @@ import io
 import json
 from datetime import date
 
-from .contrib_log import (_names, _plural, _short_ref, _type_label, github_records, load_notes_file,
+from .contrib_log import (_names, _plural, _short_ref, _type_label, collapse_reviews, github_records, load_notes_file,
                           parse_extras, parse_url_notes, sort_records)
 
 
@@ -81,10 +81,14 @@ def people(records, user):
     def add(who, how, rec):
         if not who or who.lower() == user.lower():
             return
-        entry = table.setdefault(who, {"how": {}, "urls": []})
+        link = rec.get("parent_url") or rec["url"]
+        entry = table.setdefault(who, {"how": {}, "urls": [], "seen": set()})
+        if (how, link) in entry["seen"]:
+            return
+        entry["seen"].add((how, link))
         entry["how"][how] = entry["how"].get(how, 0) + 1
-        if rec["url"] not in entry["urls"]:
-            entry["urls"].append(rec["url"])
+        if link not in entry["urls"]:
+            entry["urls"].append(link)
 
     for r in records:
         if r["type"] == "pr" and r.get("state") == "merged":
@@ -122,10 +126,10 @@ def cv_lines(records, org_names):
         comps = sorted({r["component"] for r in merged if r["component"] != "general"})
         maintainers = sorted({r.get("merged_by") for r in merged if r.get("merged_by")}
                              | {a for r in merged for a in r.get("approved_by", [])})
-        line = (f"Contributor to {org} since {date.fromisoformat(since).strftime('%B %Y')}: "
+        line = (f"Active in {org} since {date.fromisoformat(since).strftime('%B %Y')}: "
                 f"{_plural(len(merged), 'merged pull request')}")
         if comps:
-            line += f" in {', '.join(comps)}"
+            line += f" in {_names(comps, 4)}"
         if maintainers:
             line += f", reviewed and accepted by {_plural(len(maintainers), 'maintainer')}"
         lines.append(line + ".")
@@ -138,12 +142,26 @@ def cv_lines(records, org_names):
         line = f"Reviewed {_plural(len(prs), 'pull request')} from {_plural(len(authors), 'other contributor')}"
         comps = sorted({r["component"] for r in reviews if r["component"] != "general"})
         if comps:
-            line += f" ({', '.join(comps)})"
+            line += f" ({_names(comps, 4)})"
         lines.append(line + ".")
     if comments:
         threads = sorted({r["parent_url"] for r in comments})
         lines.append(f"Contributed to {_plural(len(threads), 'technical discussion')} across "
                      f"{_plural(len({r['repo'] for r in comments}), 'repository')}.")
+    papers = [r for r in records if r["type"] == "paper"]
+    if papers:
+        venues = sorted({r["venue"] for r in papers if r.get("venue")})
+        cites = sum(r.get("citations", 0) for r in papers)
+        line = f"Published {_plural(len(papers), 'peer-reviewed paper')}"
+        if venues:
+            line += f" in {_names(venues, 3)}"
+        if cites:
+            line += f", cited {_plural(cites, 'time')}"
+        lines.append(line + ".")
+    peer = [r for r in records if r["type"] == "peer_review"]
+    if peer:
+        venues = sorted({r["venue"] for r in peer if r.get("venue")})
+        lines.append(f"Completed {_plural(len(peer), 'peer review')} for {_names(venues, 3) or 'journals and conferences'}.")
     talks = [r for r in records if r["type"] == "extra" and r.get("kind") in ("talk", "workshop", "podcast")]
     if talks:
         lines.append(f"Gave {_plural(len(talks), 'talk')} on this work.")
@@ -166,6 +184,12 @@ def _ref(url):
 
 
 def _item_line(r):
+    if r["type"] == "paper":
+        venue = f" · _{_txt(r['venue'])}_" if r.get("venue") else ""
+        cited = f" · cited by {r['citations']}" if r.get("citations") else ""
+        return f"- {r.get('date_label') or r['date'][:4]} · {_type_label(r)} · [{_txt(r['title'])}]({r['url']}){venue}{cited}"
+    if r["type"] == "peer_review":
+        return f"- {r.get('date_label') or r['date'][:4]} · Peer review · {_txt(r.get('venue', ''))}"
     if r["type"] == "extra":
         title = f"[{_txt(r['title'])}]({r['link']})" if r.get("link") else _txt(r["title"])
         return f"- {r['date']} · {_type_label(r)} · {title}"
@@ -226,6 +250,13 @@ def render(records, notes, user):
     lines.append(f"| Maintainers who approved or merged your work | "
                  f"{len({p for p, e, _ in crowd if {'merged your PRs', 'approved your PRs'} & set(e['how'])})} |")
     lines.append(f"| Words of recognition | {len(recognition)} |")
+    papers = [r for r in records if r["type"] == "paper"]
+    if papers:
+        lines.append(f"| Publications | {len(papers)} ({_plural(sum(r.get('citations', 0) for r in papers), 'citation')}) |")
+    peer = [r for r in records if r["type"] == "peer_review"]
+    if peer:
+        lines.append(f"| Peer reviews | {len(peer)} for "
+                     f"{_plural(len({r.get('venue') for r in peer}), 'venue')} |")
     lines.append(f"| Beyond GitHub | {sum(1 for r in records if r['type'] == 'extra')} |")
     lines.append("")
 
@@ -234,8 +265,9 @@ def render(records, notes, user):
         lines += ["## CV-ready summary", ""] + [f"- {c}" for c in cv] + [""]
 
     lines += ["## By category", ""]
+    listed = collapse_reviews(records)
     for key, cat in notes["categories"].items():
-        items = [r for r in records if key in r.get("categories", [])]
+        items = [r for r in listed if key in r.get("categories", [])]
         lines += [f"### {cat['title']} ({len(items)})", ""]
         if cat["description"]:
             lines += [f"_{cat['description']}_", ""]
@@ -264,28 +296,93 @@ def render(records, notes, user):
             lines.append(f"| [{who}](https://github.com/{who}) | {how} | {links} |")
         lines.append("")
 
-    lines += ["## Timeline", "", "| Month | Merged PRs | Reviews | Comments | Issues | Beyond GitHub |",
-              "|---|---|---|---|---|---|"]
+    lines += ["## Timeline", "",
+              "| Month | PRs opened | PRs merged | PRs reviewed | Comments | Issues | Papers & reviews | Beyond GitHub |",
+              "|---|---|---|---|---|---|---|---|"]
     def month(r):
-        return (r.get("merged") if r["type"] == "pr" and r.get("state") == "merged" else r.get("date", ""))[:7]
+        return r.get("date", "")[:7]
 
-    months = sorted({month(r) for r in records if month(r)}, reverse=True)
+    months = sorted({month(r) for r in records if month(r)} |
+                    {r["merged"][:7] for r in records if r.get("merged")}, reverse=True)
     for m in months:
         in_month = [r for r in records if month(r) == m]
-        row = [sum(1 for r in in_month if r["type"] == "pr" and r.get("state") == "merged"),
-               sum(1 for r in in_month if r["type"] == "review"),
+        row = [sum(1 for r in in_month if r["type"] == "pr"),
+               sum(1 for r in records if r["type"] == "pr" and (r.get("merged") or "").startswith(m)),
+               len({r.get("parent_url") for r in in_month if r["type"] == "review"}),
                sum(1 for r in in_month if r["type"] == "comment" and not r.get("on_own_item")),
                sum(1 for r in in_month if r["type"] == "issue"),
+               sum(1 for r in in_month if r["type"] in ("paper", "peer_review")),
                sum(1 for r in in_month if r["type"] == "extra")]
         lines.append(f"| {m} | " + " | ".join(str(x) for x in row) + " |")
     lines.append("")
 
-    loose = [r for r in records if not r.get("categories") and kind_key(r) not in ("comment_own", "pr_closed")]
+    lines += linkedin_section(records, notes, latest)
+
+    loose = [r for r in listed if not r.get("categories") and kind_key(r) not in ("comment_own", "pr_closed")]
     if loose:
         lines += [f"## Not yet in a category ({len(loose)})", "",
                   "Add a tag in your notes file, or an `auto:` rule, to file these.", ""]
         lines += [_item_line(r) for r in loose] + [""]
     return "\n".join(lines).rstrip() + "\n"
+
+
+def linkedin_section(records, notes, latest, merged_window=30, paper_window=90):
+    """Paste-ready text for LinkedIn: an About paragraph and drafts for recent milestones.
+    Recent is measured from the newest item in the data, so the output is deterministic."""
+    gh = github_records(records)
+    merged = sort_records([r for r in gh if r["type"] == "pr" and r.get("state") == "merged"])
+    reviewed = {r["parent_url"] for r in gh if r["type"] == "review"}
+    papers = sort_records([r for r in records if r["type"] == "paper"])
+    peer = [r for r in records if r["type"] == "peer_review"]
+    if not (merged or reviewed or papers):
+        return []
+    org = _org_label({r["repo"] for r in gh}, notes["org_names"]) if gh else ""
+    comps = sorted({r["component"] for r in merged if r["component"] != "general"})
+
+    about = []
+    if merged or reviewed:
+        bit = f"I contribute to {org}"
+        if comps:
+            bit += f", mostly {_names(comps, 3)}"
+        about.append(bit + ".")
+        parts = []
+        if merged:
+            parts.append(f"{_plural(len(merged), 'of my pull request')} {'has' if len(merged) == 1 else 'have'} been merged")
+        if reviewed:
+            parts.append(f"I've reviewed {_plural(len(reviewed), 'pull request')} from other contributors")
+        about.append(" and ".join(parts) + ".")
+    if papers:
+        venues = sorted({r["venue"] for r in papers if r.get("venue")})
+        about.append(f"I've published {_plural(len(papers), 'paper')}" + (f" in {_names(venues, 3)}" if venues else "")
+                     + (" and review for " + _names(sorted({r['venue'] for r in peer if r.get('venue')}), 3) if peer else "")
+                     + ".")
+
+    lines = ["## For LinkedIn", "", "Drafts to edit and post yourself. LinkedIn doesn't allow automated updates.", "",
+             "### About (draft)", "", " ".join(about), ""]
+
+    def recent(day, window):
+        if not (day and latest):
+            return False
+        return (date.fromisoformat(latest[:10]) - date.fromisoformat(day[:10])).days <= window
+
+    drafts = []
+    for r in merged:
+        if not recent(r.get("merged"), merged_window):
+            continue
+        where = f"`{r['component']}` in " if r["component"] != "general" else ""
+        text = f"My change to {where}{r['repo'].split('/')[-1]} was merged: {r['title']}."
+        if r.get("fixes"):
+            text += f" It closes {_plural(len(r['fixes']), 'reported issue')}."
+        thanks = sorted(set(r.get("approved_by", [])) | ({r["merged_by"]} if r.get("merged_by") else set()))
+        if thanks:
+            text += f" Thanks to {_names(thanks)} for the reviews."
+        drafts.append(f"- {text} {r['url']}")
+    for r in papers:
+        if recent(r.get("date"), paper_window):
+            drafts.append(f"- New paper" + (f" in {r['venue']}" if r.get("venue") else "") + f": {r['title']}. {r['url']}")
+    if drafts:
+        lines += ["### Post drafts", ""] + drafts + [""]
+    return lines
 
 
 CSV_FIELDS = ["date", "type", "state", "repo", "component", "number", "title", "url", "categories",

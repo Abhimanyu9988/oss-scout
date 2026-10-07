@@ -166,7 +166,7 @@ class RenderTest(unittest.TestCase):
     def test_section(self):
         text = contrib_log.render_section(self.records(), CFG)
         self.assertTrue(text.startswith(contrib_log.START) and text.rstrip().endswith(contrib_log.END))
-        self.assertIn("**2 merged PRs** · 1 open · **1 review** · 1 comment on others' issues and PRs · 1 issue opened", text)
+        self.assertIn("**2 merged PRs** · 1 open · **1 PR reviewed** · 1 comment on others' issues and PRs · 1 issue opened", text)
         self.assertIn("Active since Sep 2026 across 1 repository · components `internal/k8sinventory`, "
                       "`receiver/kubeletstats`, `receiver/sqlserver`", text)
         self.assertIn("### Merged", text)
@@ -243,6 +243,37 @@ class DetailsTest(unittest.TestCase):
         self.assertIn("- 2026-10-01 · Meeting · SIG meeting demo", text)
         self.assertNotIn("speaking", text)
         self.assertEqual(contrib_log.summary_counts(recs + extras)["merged"], 2)
+
+
+class FixesTest(unittest.TestCase):
+    def test_plurals(self):
+        self.assertEqual(contrib_log._plural(5, "repository"), "5 repositories")
+        self.assertEqual(contrib_log._plural(1, "repository"), "1 repository")
+        self.assertEqual(contrib_log._plural(2, "day"), "2 days")
+        self.assertEqual(contrib_log._plural(3, "PR"), "3 PRs")
+        self.assertEqual(contrib_log._plural(2, "discussion"), "2 discussions")
+
+    def test_praise_uses_real_world_examples(self):
+        genuine = ("Thanks for picking this up — this is a real documentation gap, and the failover-cluster note is "
+                   "the kind of thing that costs people hours. A few things before I can approve.\n\n## Blocking\n**The...")
+        self.assertTrue(contrib_log.praise(genuine).startswith("Thanks for picking this up — this is a real documentation gap"))
+        self.assertNotIn("Blocking", contrib_log.praise(genuine))
+        self.assertEqual(contrib_log.praise("Thanks, added a few comments!"), "")
+        self.assertEqual(contrib_log.praise("This PR has been approved by the code-owner. Could someone from "
+                                            "@open-telemetry/collector-contrib-approvers please take a look at it? Thanks!"), "")
+        self.assertEqual(contrib_log.praise("Great work! This unblocks the release."), "Great work! This unblocks the release.")
+        self.assertEqual(contrib_log.praise("> Great idea\n\nI disagree."), "")      # quoting someone else
+
+    def test_review_rounds_collapse(self):
+        p = f"https://github.com/{C}/pull/51231"
+        rounds = [{"type": "review", "url": p + "#r1", "parent_url": p, "date": "2026-09-20", "review_state": "commented",
+                   "repo": C, "number": 51231, "title": "t", "component": "receiver/sqlserver"},
+                  {"type": "review", "url": p + "#r2", "parent_url": p, "date": "2026-09-21", "review_state": "approved",
+                   "repo": C, "number": 51231, "title": "t", "component": "receiver/sqlserver"}]
+        out = contrib_log.collapse_reviews(rounds)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(contrib_log._type_label(out[0]), "Review · approved (2 rounds)")
+        self.assertEqual(contrib_log.summary_counts(rounds)["reviews"], 1)
 
 
 class RunTest(unittest.TestCase):

@@ -15,17 +15,23 @@ categories:
   recognition:
     title: Recognition
     description: Invitations, selections and praise from peers.
+  publications:
+    title: Published research
+    description: Papers in journals and conferences, with citations.
   speaking:
     title: Talks and writing
     description: Talks, posts and other ways you shared the work.
 
 # Which category each kind of contribution is filed under by default.
 # Kinds: pr_merged, pr_open, pr_closed, review, comment, comment_own, issue,
+#        paper, peer_review (from ORCID),
 #        extra:talk, extra:meeting, extra:review, extra:post, extra:mentoring,
 #        extra:workshop, extra:podcast, extra:other
 auto:
   pr_merged: original-work
   review: reviewing
+  paper: publications
+  peer_review: reviewing
   extra:review: reviewing
   extra:talk: speaking
   extra:workshop: speaking

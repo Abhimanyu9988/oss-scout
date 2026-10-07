@@ -17,6 +17,7 @@ import os
 import re
 from datetime import date, timedelta
 
+from . import scholar
 from .github import GitHubError
 
 SEARCH_CAP = 1000
@@ -38,6 +39,9 @@ DEFAULTS = {
     "readme_show_tags": False,
     "readme_hide_closed_prs": True,
     "readme_recent_items": 5,
+    "orcid": "",
+    "openalex_email": "",
+    "links": {},
     "tool_url": "https://github.com/Abhimanyu9988/oss-scout",
 }
 
@@ -111,18 +115,42 @@ FIXES_RE = re.compile(
     r"\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s*:?\s+"
     r"((?:[\w.-]+/[\w.-]+)?#\d+|https://github\.com/[\w.-]+/[\w.-]+/issues/\d+)", re.I)
 PRAISE_RE = re.compile(
-    r"\b(thanks?|thank you|great|nice|awesome|excellent|appreciate[ds]?|good catch|well done|"
-    r"helpful|love (?:this|it)|kudos|brilliant|fantastic)\b", re.I)
+    r"\b(great|nice|awesome|excellent|appreciate[ds]?|good catch|well done|helpful|kudos|brilliant|"
+    r"fantastic|valuable|impressive|love (?:this|it)|thanks? (?:a lot|so much)|thank you so much|"
+    r"thanks? (?:you )?for (?:picking|taking|tackling|fixing|working|digging|investigating|"
+    r"addressing|the (?:fix|thorough|careful|detailed|quick)|this (?:fix|work|contribution)))", re.I)
+NOT_PRAISE_RE = re.compile(r"@[\w-]+/[\w-]+|please (?:take a look|review)|could someone|ptal", re.I)
 
 
 def _is_bot(login):
     return bool(re.search(r"\[bot\]$|bot$|^github-actions|dashboard", login or "", re.I))
 
 
+def _clean(body):
+    text = re.sub(r"```.*?```", " ", body or "", flags=re.S)
+    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith((">", "#", "|", "- [", "* ["))]
+    text = " ".join(lines)
+    text = re.sub(r"[*_`]+", "", text)
+    return " ".join(text.split())
+
+
+def praise(body, limit=240):
+    """The sentence(s) of a comment that praise the work, or '' if there's no real praise."""
+    if not body or NOT_PRAISE_RE.search(body):
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", _clean(body))
+    hits = [s for s in sentences if PRAISE_RE.search(s)]
+    if not hits:
+        return ""
+    i = sentences.index(hits[0])
+    text = hits[0]
+    if len(text) < 60 and i + 1 < len(sentences):      # a short "Great work!" reads better with its follow-up
+        text = f"{text} {sentences[i + 1]}"
+    return text if len(text) <= limit else text[:limit - 1].rsplit(" ", 1)[0] + "…"
+
+
 def _excerpt(body, limit=200):
-    lines = [ln for ln in (body or "").splitlines() if ln.strip() and not ln.lstrip().startswith(">")]
-    text = re.sub(r"```.*?```", " ", "\n".join(lines), flags=re.S)
-    text = " ".join(text.split())
+    text = _clean(body)
     return text if len(text) <= limit else text[:limit - 1].rsplit(" ", 1)[0] + "…"
 
 
@@ -146,8 +174,9 @@ def merged_pr_details(gh, repo, number, user):
         who = (c.get("user") or {}).get("login", "")
         if not who or who.lower() == user.lower() or _is_bot(who):
             continue
-        if PRAISE_RE.search(c.get("body") or ""):
-            recognition.append({"by": who, "text": _excerpt(c["body"]), "url": c.get("html_url", ""),
+        quote = praise(c.get("body"))
+        if quote:
+            recognition.append({"by": who, "text": quote, "url": c.get("html_url", ""),
                                 "date": _day(c.get("created_at") or c.get("submitted_at"))})
     return {
         "additions": pr.get("additions", 0),
@@ -350,13 +379,41 @@ EXTRA_LABELS = {"talk": "Talk", "meeting": "Meeting", "review": "Program committ
                 "mentoring": "Mentoring", "workshop": "Workshop", "podcast": "Podcast", "other": "Other"}
 
 
+REVIEW_RANK = {"approved": 0, "changes_requested": 1, "commented": 2, "dismissed": 3}
+
+
+def collapse_reviews(records):
+    """One entry per reviewed PR: the strongest outcome, the latest date, and how many rounds."""
+    out, groups = [], {}
+    for r in records:
+        if r["type"] == "review":
+            groups.setdefault(r.get("parent_url") or r["url"], []).append(r)
+        else:
+            out.append(r)
+    for parent, rounds in groups.items():
+        latest = max(rounds, key=lambda x: (x.get("date", ""), x["url"]))
+        best = min(rounds, key=lambda x: REVIEW_RANK.get(x.get("review_state"), 9))
+        rec = dict(latest)
+        rec["review_state"] = best.get("review_state")
+        rec["rounds"] = len(rounds)
+        out.append(rec)
+    return sort_records(out)
+
+
 def _type_label(rec):
     if rec["type"] == "review":
-        return REVIEW_LABELS.get(rec.get("review_state"), "Review")
+        label = REVIEW_LABELS.get(rec.get("review_state"), "Review")
+        if rec.get("rounds", 1) > 1:
+            label += f" ({rec['rounds']} rounds)"
+        return label
     if rec["type"] == "comment":
         return "Comment on PR" if rec.get("on") == "pr" else "Comment"
     if rec["type"] == "extra":
         return EXTRA_LABELS.get(rec.get("kind"), rec.get("kind", "Other").capitalize())
+    if rec["type"] == "paper":
+        return scholar.kind_label(rec)
+    if rec["type"] == "peer_review":
+        return "Peer review"
     label = TYPE_LABELS.get((rec["type"], rec.get("state")), rec["type"])
     if rec.get("merged"):
         label += f" {rec['merged']}"
@@ -367,15 +424,28 @@ def _cell(text):
     return (text or "").replace("|", "\\|").replace("<", "&lt;").replace(">", "&gt;").replace("\n", " ")
 
 
+def plural_word(word, n=2):
+    if n == 1:
+        return word
+    if re.search(r"[^aeiou]y$", word):
+        return word[:-1] + "ies"
+    if re.search(r"(s|x|z|ch|sh)$", word):
+        return word + "es"
+    return word + "s"
+
+
 def _plural(n, word):
-    return f"{n} {word}{'' if n == 1 else 's'}"
+    return f"{n} {plural_word(word, n)}"
 
 
 def _names(names, limit=4):
+    """'A', 'A and B', 'A, B and C', or 'A, B, C, D and 2 more'."""
     names = list(names)
-    if len(names) <= limit:
-        return ", ".join(names)
-    return ", ".join(names[:limit]) + f" and {len(names) - limit} more"
+    if not names:
+        return ""
+    if len(names) > limit:
+        return ", ".join(names[:limit]) + f" and {len(names) - limit} more"
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def _short_ref(url, home_repo):
@@ -385,8 +455,11 @@ def _short_ref(url, home_repo):
     return f"#{m.group(2)}" if m.group(1) == home_repo else f"{m.group(1)}#{m.group(2)}"
 
 
+NON_GITHUB = ("extra", "paper", "peer_review")
+
+
 def github_records(records):
-    return [r for r in records if r["type"] != "extra"]
+    return [r for r in records if r["type"] not in NON_GITHUB]
 
 
 def summary_counts(records):
@@ -395,7 +468,8 @@ def summary_counts(records):
     return {
         "merged": sum(1 for r in gh_records if r["type"] == "pr" and r.get("state") == "merged"),
         "open_prs": sum(1 for r in gh_records if r["type"] == "pr" and r.get("state") == "open"),
-        "reviews": sum(1 for r in gh_records if r["type"] == "review"),
+        "reviews": len({r.get("parent_url") or r["url"] for r in gh_records if r["type"] == "review"}),
+        "review_rounds": sum(1 for r in gh_records if r["type"] == "review"),
         "comments": len(others_comments),
         "issues": sum(1 for r in gh_records if r["type"] == "issue"),
         "components": sorted({r["component"] for r in gh_records if r["component"] != "general"
@@ -403,6 +477,10 @@ def summary_counts(records):
         "repos": sorted({r["repo"] for r in gh_records}),
         "since": min((r["date"] for r in gh_records if r.get("date")), default=""),
         "extras": sum(1 for r in records if r["type"] == "extra"),
+        "papers": sum(1 for r in records if r["type"] == "paper"),
+        "citations": sum(r.get("citations", 0) for r in records if r["type"] == "paper"),
+        "peer_reviews": sum(1 for r in records if r["type"] == "peer_review"),
+        "review_venues": sorted({r.get("venue", "") for r in records if r["type"] == "peer_review"} - {""}),
     }
 
 
@@ -439,7 +517,7 @@ def merged_line(r):
 
 
 def render_section(records, cfg):
-    shown = _visible(records, cfg)
+    shown = collapse_reviews(_visible(records, cfg))
     gh_shown = github_records(shown)
     extras = sort_records([r for r in records if r["type"] == "extra"])
     c = summary_counts(records)
@@ -451,7 +529,7 @@ def render_section(records, cfg):
     headline = [f"**{_plural(c['merged'], 'merged PR')}**"]
     if c["open_prs"]:
         headline.append(f"{c['open_prs']} open")
-    headline += [f"**{_plural(c['reviews'], 'review')}**",
+    headline += [f"**{_plural(c['reviews'], 'PR')} reviewed**",
                  f"{_plural(c['comments'], 'comment')} on others' issues and PRs",
                  _plural(c["issues"], "issue") + " opened"]
     lines.append(" · ".join(headline))
@@ -463,6 +541,18 @@ def render_section(records, cfg):
         context.append("components " + ", ".join(f"`{x}`" for x in c["components"]))
     if context:
         lines += ["", " · ".join(context)]
+    research = []
+    if c["papers"]:
+        research.append(_plural(c["papers"], "publication")
+                        + (f" ({_plural(c['citations'], 'citation')})" if c["citations"] else ""))
+    if c["peer_reviews"]:
+        research.append(_plural(c["peer_reviews"], "peer review")
+                        + (f" for {_names(c['review_venues'], 3)}" if c["review_venues"] else ""))
+    if research:
+        lines += ["", " · ".join(research)]
+    links = profile_links(cfg)
+    if links:
+        lines += ["", " · ".join(f"[{name}]({url})" for name, url in links)]
     lines.append("")
 
     merged = sort_records([r for r in gh_shown if r["type"] == "pr" and r.get("state") == "merged"])
@@ -476,6 +566,27 @@ def render_section(records, cfg):
         for r in recent:
             repo = r["repo"].split("/")[-1]
             lines.append(f"- {r['date']} · {_type_label(r)} · [#{r['number']} {_cell(r['title'])}]({r['url']}) · {repo}")
+        lines.append("")
+
+    papers = sort_records([r for r in records if r["type"] == "paper"])
+    if papers:
+        lines += ["### Publications", ""]
+        for r in papers:
+            venue = f" · _{_cell(r['venue'])}_" if r.get("venue") else ""
+            cited = f" · cited by {r['citations']}" if r.get("citations") else ""
+            lines.append(f"- {r.get('date_label') or r['date'][:4]} · [{_cell(r['title'])}]({r['url']}){venue}{cited}")
+        lines.append("")
+
+    reviews = [r for r in records if r["type"] == "peer_review"]
+    if reviews:
+        lines += ["### Peer review", ""]
+        by_venue = {}
+        for r in reviews:
+            by_venue.setdefault(r.get("venue") or "Unspecified venue", []).append(r)
+        for venue in sorted(by_venue, key=lambda v: (-len(by_venue[v]), v)):
+            years = sorted({(r.get("date") or "")[:4] for r in by_venue[venue]} - {""})
+            span = f" ({years[0]}–{years[-1]})" if len(years) > 1 else (f" ({years[0]})" if years else "")
+            lines.append(f"- **{_cell(venue)}** · {_plural(len(by_venue[venue]), 'review')}{span}")
         lines.append("")
 
     if extras:
@@ -499,8 +610,8 @@ def render_section(records, cfg):
         for comp in sorted(by_comp, key=lambda k: (k == "general", -len(by_comp[k]), k)):
             items = sort_records(by_comp[comp])
             counts = [(t, sum(1 for r in items if r["type"] == t)) for t in ("pr", "review", "comment", "issue")]
-            words = {"pr": "PR", "review": "review", "comment": "comment", "issue": "issue"}
-            parts = [_plural(n, words[t]) for t, n in counts if n]
+            words = {"pr": "PR", "review": "PR", "comment": "comment", "issue": "issue"}
+            parts = [_plural(n, words[t]) + (" reviewed" if t == "review" else "") for t, n in counts if n]
             lines += ["<details>", f"<summary><b>{_cell(comp)}</b> · {' · '.join(parts)}</summary>", ""]
             lines += ["| Date | Type | Item |" + (" Note |" if has_notes else ""),
                       "|---|---|---|" + ("---|" if has_notes else "")]
@@ -516,6 +627,15 @@ def render_section(records, cfg):
     return "\n".join(lines) + "\n"
 
 
+def profile_links(cfg):
+    """[(name, url)] for the links line: LinkedIn, ORCID and anything else configured."""
+    links = dict(cfg.get("links") or {})
+    if cfg.get("orcid") and "ORCID" not in links:
+        links["ORCID"] = f"https://orcid.org/{cfg['orcid']}"
+    order = {"LinkedIn": 0, "ORCID": 1}
+    return sorted(((str(k), str(v)) for k, v in links.items() if v), key=lambda kv: (order.get(kv[0], 9), kv[0]))
+
+
 def replace_section(readme, section):
     if START in readme and END in readme:
         before = readme.split(START, 1)[0]
@@ -526,22 +646,28 @@ def replace_section(readme, section):
 
 # ---------------------------------------------------------------- run
 
-def run(gh, cfg, today, full=False, dry_run=False, base_dir="."):
+def run(gh, cfg, today, full=False, dry_run=False, base_dir=".", scholar_fetch=None):
     """Collect, annotate, render and write. Returns (changed_files, errors, records)."""
     data_path = os.path.join(base_dir, cfg["data_path"])
     readme_path = os.path.join(base_dir, cfg["readme_path"])
-    existing = []
+    previous = []
     if os.path.exists(data_path):
         with open(data_path, encoding="utf-8") as fh:
-            existing = [r for r in json.load(fh).get("records", []) if r.get("type") != "extra"]
+            previous = json.load(fh).get("records", [])
+    existing = [r for r in previous if r.get("type") not in NON_GITHUB]
+    old_research = [r for r in previous if r.get("type") in ("paper", "peer_review")]
 
     rebuild = full or not existing
     records, errors = collect(gh, cfg, existing, today, full=rebuild)
     if errors and rebuild and existing:
         # A partial rebuild would drop real history; keep the files as they are.
         return [], errors, existing
+    research, research_errors = scholar.collect(cfg, **({"fetch": scholar_fetch} if scholar_fetch else {}))
+    if research_errors and not research:
+        research = old_research          # ORCID unreachable today: keep what we had
+    errors += research_errors
     notes = load_notes_file(os.path.join(base_dir, cfg["annotations_path"]))
-    records = sort_records(apply_annotations(records, parse_url_notes(notes)) + parse_extras(notes))
+    records = sort_records(apply_annotations(records + research, parse_url_notes(notes)) + parse_extras(notes))
 
     data_text = json.dumps({"user": cfg["github_user"], "records": records},
                            indent=2, sort_keys=True, ensure_ascii=False) + "\n"

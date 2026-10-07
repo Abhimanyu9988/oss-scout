@@ -111,7 +111,10 @@ What visitors see, without clicking anything:
 - **Merged:** each merged PR with its component, who merged and approved it, its size,
   and the issues it fixed.
 - **Recent activity:** your five latest items.
+- **Publications and peer review** (optional): from your public ORCID record, with
+  citation counts and journal names from OpenAlex.
 - **Beyond GitHub:** talks, meetings, program committees and posts you list yourself.
+- **Links** to your LinkedIn and ORCID profiles.
 
 Below that, everything else sits in one collapsed block, grouped by repo and then
 component, newest first. A full copy, including words of recognition from reviewers, is
@@ -151,6 +154,18 @@ How it behaves:
 - **Permissions:** it reads public data only, and the workflow's write permission covers
   just its own repo.
 
+**Publications and peer reviews from ORCID.** Add `"orcid": "0000-0000-0000-0000"` to
+the config. Each run then reads two parts of your public ORCID record, your works and
+your peer reviews, and nothing else (not employment, education or other personal
+sections). It looks up citation counts and journal names on OpenAlex. Both APIs are
+free and need no key. Journals push papers to ORCID automatically once you've linked
+them, and services like Web of Science Reviewer Recognition do the same for peer
+reviews. If ORCID can't be reached, the previous day's list is kept.
+
+**LinkedIn** doesn't allow automated profile updates or reliable automated posting. So
+the log shows a link to your profile (`"links": {"LinkedIn": "https://…"}`), and the
+private portfolio writes drafts you can post yourself.
+
 Setup step 8 does all of this for you. By hand:
 
 1. Copy `profile-template/contrib-log.yml` into `you/you` as `.github/workflows/contrib-log.yml`
@@ -171,6 +186,9 @@ Setup step 8 does all of this for you. By hand:
 | `readme_recent_items` | 5 | How many items "Recent activity" shows |
 | `readme_show_tags` | false | Show annotation tags in the README |
 | `component_label_patterns` | OTel-style label prefixes | Regexes that pick the component label |
+| `orcid` | none | Your ORCID iD, for publications and peer reviews |
+| `openalex_email` | none | Optional; puts OpenAlex requests in its faster "polite pool" |
+| `links` | none | Links to show, e.g. `{"LinkedIn": "https://www.linkedin.com/in/you"}` |
 
 ## Private portfolio
 
@@ -187,9 +205,14 @@ The portfolio contains:
 - **Every item filed under your categories,** with its evidence: size, approvals, who
   merged it, what it fixed, and what reviewers said about it.
 - **Recognition from peers:** the reviewers' comments that praised your work, with links.
+  Plain "thanks" and review requests don't count; it quotes the sentence that does the
+  praising.
 - **People you've worked with:** who merged, approved or praised your work, and whose PRs
   you reviewed. Useful when you need someone who knows your work first-hand.
+- **Publications and peer reviews** from ORCID, if configured.
 - **Timeline:** month by month.
+- **For LinkedIn:** a ready-to-edit About paragraph, and draft posts for PRs merged in the
+  last 30 days and papers from the last 90.
 - **Not yet in a category:** what's still unfiled.
 
 Everything is configured in `notes.yaml` (see `portfolio-template/notes.yaml`):
@@ -202,6 +225,38 @@ Everything is configured in `notes.yaml` (see `portfolio-template/notes.yaml`):
 
 ```
 python3 -m scout portfolio --data contributions.json --notes notes.yaml --out portfolio.md --csv portfolio.csv
+```
+
+## Changing things later
+
+Every part separates what's rebuilt daily from what's yours. Your files are never
+overwritten:
+
+| Repo | Rebuilt daily (don't hand-edit) | Yours to edit |
+|---|---|---|
+| your copy of oss-scout | the board issue | `scout.config.json`: repos and labels to watch, delivery |
+| your profile, `you/you` | the marked log section, `contributions.json` | the rest of your README, `contrib-log.config.json`, `annotations.yaml` |
+| your private portfolio | `portfolio.md`, `portfolio.csv` | `notes.yaml` |
+
+To change something:
+
+1. **Edit the file on github.com** (pencil icon), or locally and push.
+2. **Wait for the next daily run,** or start one now: *Actions*, pick the workflow, *Run
+   workflow*. On the profile repo, tick *full* to re-read your whole history.
+
+Running `./setup.sh` again also works. It skips whatever is already done and lets you
+change answers such as your intro line, ORCID iD or LinkedIn link.
+
+### Using a fixed version
+
+The profile and portfolio workflows fetch this repo's code on every run (`ref: main` in
+their workflow files). That's convenient for the author. If you're using someone else's
+copy, pin a release so their later changes can't surprise you:
+
+```yaml
+        with:
+          repository: Abhimanyu9988/oss-scout
+          ref: v0.3.0
 ```
 
 ## Run it locally
