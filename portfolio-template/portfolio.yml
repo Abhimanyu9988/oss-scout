@@ -1,0 +1,60 @@
+name: Portfolio
+
+# Rebuilds portfolio.md (and portfolio.csv) every day from your public contribution
+# log plus the private notes in this repo. Keep this repository private.
+
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # only to commit portfolio.md and portfolio.csv in this repo
+
+concurrency:
+  group: portfolio
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get oss-scout
+        uses: actions/checkout@v4
+        with:
+          repository: __SCOUT_REPO__
+          ref: main
+          path: .oss-scout
+
+      - name: Get your public contribution log
+        uses: actions/checkout@v4
+        with:
+          repository: __PROFILE_REPO__
+          path: .profile
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install YAML support
+        run: pip install --quiet pyyaml
+
+      - name: Build the portfolio
+        env:
+          PYTHONPATH: .oss-scout
+        run: python -m scout portfolio --data .profile/contributions.json --notes notes.yaml --out portfolio.md --csv portfolio.csv
+
+      - name: Commit if anything changed
+        run: |
+          git add portfolio.md portfolio.csv
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update portfolio"
+          git push

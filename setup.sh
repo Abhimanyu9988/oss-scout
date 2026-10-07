@@ -7,7 +7,7 @@ set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 ROOT="$(pwd)"
 CONFIG="$ROOT/scout.config.json"
-STEPS=8
+STEPS=9
 
 if [ -t 1 ]; then
   B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; D=$'\033[2m'; N=$'\033[0m'
@@ -385,6 +385,27 @@ with open(path, "w") as fh:
     json.dump(cfg, fh, indent=2)
     fh.write("\n")
 PY
+  README_FILE="$WORK/profile/README.md"
+  if ! grep -q "oss-scout:intro" "$README_FILE" 2>/dev/null; then
+    info "Visitors read the top of your profile first. A line about your focus does more than any count."
+    info "Example: I work on Kubernetes observability, mostly OpenTelemetry collectors in real clusters."
+    INTRO="$(prompt "One-line intro for the top of your profile (Enter to skip)" "")"
+    if [ -n "$INTRO" ]; then
+      python3 - "$README_FILE" "$INTRO" <<'PY'
+import os, sys
+path, intro = sys.argv[1], sys.argv[2]
+text = open(path).read() if os.path.exists(path) else ""
+lines = text.splitlines()
+at = next((i + 1 for i, ln in enumerate(lines) if ln.strip()), 0)
+block = ["", "<!-- oss-scout:intro -->", intro]
+if at >= len(lines) or lines[at].strip():
+    block.append("")
+lines[at:at] = block
+open(path, "w").write("\n".join(lines).rstrip("\n") + "\n")
+PY
+      ok "Intro added"
+    fi
+  fi
   git -C "$WORK/profile" config user.email "$(git config --get user.email)"
   git -C "$WORK/profile" config user.name "$(git config --get user.name)"
   git -C "$WORK/profile" add -A
@@ -403,12 +424,64 @@ PY
       ok "Done"
       info "Opening your profile."
       open_url "https://github.com/$HAVE"
+      info "While you're there: 'Customize your pins' and pick the repos visitors should see first,"
+      info "for example $REPO."
     fi
   fi
+fi
+
+# ───────────────────────────────────────────────────────────── 9
+step 9 "Private portfolio (optional)"
+
+info "A private repo that turns your log into a categorised portfolio every day: your own"
+info "categories, words of recognition from maintainers, the people you've worked with,"
+info "CV-ready lines and a month-by-month timeline. Only you can see it."
+if ! gh api "repos/$PROFILE/contents/contrib-log.config.json" >/dev/null 2>&1; then
+  info "It builds on the contribution log from step 8, which isn't set up yet. Skipping."
+elif ask "Set it up?"; then
+  PNAME="$(prompt "Name for the private repo" "portfolio")"
+  PREPO="$HAVE/$PNAME"
+  if gh repo view "$PREPO" >/dev/null 2>&1; then
+    [ "$(gh repo view "$PREPO" --json visibility --jq .visibility 2>/dev/null)" = "PRIVATE" ] \
+      || fail "$PREPO already exists and isn't private. Run again and pick another name."
+    ok "Using your existing private repo $PREPO"
+  else
+    gh repo create "$PREPO" --private --add-readme \
+      --description "Private contribution portfolio" >/dev/null || fail "Couldn't create $PREPO."
+    ok "Created https://github.com/$PREPO (private)"
+  fi
+  WORK="$(mktemp -d)"
+  gh repo clone "$PREPO" "$WORK/portfolio" -- -q || fail "Couldn't clone $PREPO."
+  mkdir -p "$WORK/portfolio/.github/workflows"
+  sed -e "s#__SCOUT_REPO__#$REPO#" -e "s#__PROFILE_REPO__#$PROFILE#" "$ROOT/portfolio-template/portfolio.yml" \
+    > "$WORK/portfolio/.github/workflows/portfolio.yml"
+  [ -f "$WORK/portfolio/notes.yaml" ] || cp "$ROOT/portfolio-template/notes.yaml" "$WORK/portfolio/notes.yaml"
+  git -C "$WORK/portfolio" config user.email "$(git config --get user.email)"
+  git -C "$WORK/portfolio" config user.name "$(git config --get user.name)"
+  git -C "$WORK/portfolio" add -A
+  if git -C "$WORK/portfolio" diff --cached --quiet; then
+    ok "The portfolio is already set up in $PREPO"
+  else
+    git -C "$WORK/portfolio" commit -qm "Add the daily portfolio build" \
+      && git -C "$WORK/portfolio" push -q || fail "Couldn't push to $PREPO."
+    ok "Added the daily workflow and notes.yaml to $PREPO"
+  fi
+  rm -rf "$WORK"
+  if ! gh api "repos/$PROFILE/contents/contributions.json" >/dev/null 2>&1; then
+    info "Your log hasn't produced contributions.json yet; the portfolio builds daily once it has."
+  elif ask "Build it now?"; then
+    if run_and_watch "$PREPO" portfolio.yml; then
+      ok "Done"
+      info "Opening your portfolio."
+      open_url "https://github.com/$PREPO/blob/main/portfolio.md"
+    fi
+  fi
+  info "Make it yours: edit notes.yaml in $PREPO (categories, rules, private notes and entries)."
 fi
 
 printf '\n%sAll set.%s\n' "$G" "$N"
 info "Board:  https://github.com/$REPO/issues?q=label%3Aoss-scout"
 info "To get the comments on your phone, install the GitHub app and allow notifications."
 info "Change what it watches: edit scout.config.json, then run ./setup.sh to push it"
-info "Add notes to your log: edit annotations.yaml in $PROFILE"
+info "Add notes or talks to your public log: edit annotations.yaml in $PROFILE"
+info "Your private portfolio's categories and notes: notes.yaml in your portfolio repo"

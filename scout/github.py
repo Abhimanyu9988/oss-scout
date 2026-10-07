@@ -130,6 +130,10 @@ class GitHub:
             reviews.extend(page)
         return reviews
 
+    def pull(self, repo, number):
+        data, _ = self._get(f"{self.api}/repos/{repo}/pulls/{number}")
+        return data
+
     def user(self, login):
         data, _ = self._get(f"{self.api}/users/{login}")
         return data

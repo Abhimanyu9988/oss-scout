@@ -1,0 +1,54 @@
+# Private notes for your contribution portfolio. Keep this repository private.
+# Everything here stays out of your public profile.
+
+# Your own categories, in the order you want them in the portfolio. Rename freely.
+categories:
+  original-work:
+    title: Original contributions
+    description: Code, fixes and designs of yours that a project accepted and now relies on.
+  reviewing:
+    title: Reviewing others' work
+    description: Reviews and evaluations of other people's contributions.
+  leadership:
+    title: Leading and critical roles
+    description: Ownership, coordination and decisions you drove.
+  recognition:
+    title: Recognition
+    description: Invitations, selections and praise from peers.
+  speaking:
+    title: Talks and writing
+    description: Talks, posts and other ways you shared the work.
+
+# Which category each kind of contribution is filed under by default.
+# Kinds: pr_merged, pr_open, pr_closed, review, comment, comment_own, issue,
+#        extra:talk, extra:meeting, extra:review, extra:post, extra:mentoring,
+#        extra:workshop, extra:podcast, extra:other
+auto:
+  pr_merged: original-work
+  review: reviewing
+  extra:review: reviewing
+  extra:talk: speaking
+  extra:workshop: speaking
+  extra:podcast: speaking
+  extra:post: speaking
+
+# How organisations are named in the CV-ready summary.
+org_names:
+  open-telemetry: OpenTelemetry
+
+# Extra categories and private notes for specific items, keyed by their URL.
+items: {}
+#  "https://github.com/owner/repo/pull/123":
+#    tags: [leadership]
+#    note: Coordinated the design across three components
+
+# Things that belong in the portfolio but never on your public profile.
+extras: []
+#  - date: 2026-11-20
+#    type: review
+#    title: Program committee, Example Conference 2026
+#    note: Reviewed 12 submissions
+#  - date: 2026-10-15
+#    type: other
+#    title: Invited to join a working group
+#    tags: [recognition]

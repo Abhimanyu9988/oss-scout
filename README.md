@@ -40,7 +40,9 @@ The guided setup:
 5. Asks whether you also want Slack.
 6. Offers to make the repo public.
 7. Sends the first digest and opens your board.
-8. Offers to add a contribution log to your GitHub profile (see below).
+8. Offers to add a contribution log to your GitHub profile, with an optional intro line
+   (see below).
+9. Offers a private portfolio repo (see below).
 
 It asks before every change. Run it again at any time to finish, update or push changes
 to your config.
@@ -102,9 +104,18 @@ GitHub's own record, so nothing is logged by hand:
 - **Comments you wrote,** each linked to the comment itself rather than just the thread.
 - **Issues you opened.**
 
-The section starts with a summary: merged PRs, reviews, comments on others' issues and
-PRs, issues opened, and the components you've worked in. Underneath, items are grouped
-by repo, then by component, newest first. A full copy is kept in `contributions.json`.
+What visitors see, without clicking anything:
+
+- **A summary:** merged PRs, reviews, comments on others' issues and PRs, issues opened,
+  how long you've been active, and the components you've worked in.
+- **Merged:** each merged PR with its component, who merged and approved it, its size,
+  and the issues it fixed.
+- **Recent activity:** your five latest items.
+- **Beyond GitHub:** talks, meetings, program committees and posts you list yourself.
+
+Below that, everything else sits in one collapsed block, grouped by repo and then
+component, newest first. A full copy, including words of recognition from reviewers, is
+kept in `contributions.json`.
 
 How it behaves:
 
@@ -121,10 +132,22 @@ How it behaves:
   re-read your whole history. That also removes anything you've since deleted.
 - **It handles GitHub search's 1,000-result cap** by splitting the date range until each
   slice fits.
-- **Replies on your own PRs stay in the JSON** but are left out of the README.
+- **Replies on your own PRs, and PRs closed without merging, stay in the JSON** but are
+  left out of the README.
 - **Annotations are optional.** In `annotations.yaml`, add a one-line note keyed by the
   URL of any PR, issue, review or comment, and it appears in the Note column. Tags you
   add stay in the JSON unless you set `readme_show_tags`.
+- **Work that happens outside GitHub** goes in an `extras:` list in the same file, and
+  appears under "Beyond GitHub":
+
+  ```yaml
+  extras:
+    - date: 2026-11-24
+      type: talk          # talk, meeting, review, post, mentoring, workshop, podcast, other
+      title: Kubelet stats in practice
+      url: https://example.org/talk
+      note: Community day keynote
+  ```
 - **Permissions:** it reads public data only, and the workflow's write permission covers
   just its own repo.
 
@@ -144,8 +167,42 @@ Setup step 8 does all of this for you. By hand:
 | `readme_path` / `data_path` | `README.md` / `contributions.json` | Output files |
 | `annotations_path` | `annotations.yaml` | Your notes (`.json` also works) |
 | `readme_include_own_comments` | false | Also list replies on your own PRs and issues |
+| `readme_hide_closed_prs` | true | Leave PRs closed without merging out of the README |
+| `readme_recent_items` | 5 | How many items "Recent activity" shows |
 | `readme_show_tags` | false | Show annotation tags in the README |
 | `component_label_patterns` | OTel-style label prefixes | Regexes that pick the component label |
+
+## Private portfolio
+
+Your public profile shows the work. A portfolio explains it, in your own categories,
+for a promotion case, a CV, a fellowship or any application. `scout portfolio` builds
+one from the log's `contributions.json` and a notes file you keep private. Setup step 9
+puts both in a private repo that rebuilds `portfolio.md` and `portfolio.csv` every day.
+The portfolio contains:
+
+- **At a glance:** merged PRs and lines changed, reviews of others' work, discussions,
+  repositories and components, the maintainers who approved or merged your work, and
+  words of recognition.
+- **CV-ready lines** you can paste.
+- **Every item filed under your categories,** with its evidence: size, approvals, who
+  merged it, what it fixed, and what reviewers said about it.
+- **Recognition from peers:** the reviewers' comments that praised your work, with links.
+- **People you've worked with:** who merged, approved or praised your work, and whose PRs
+  you reviewed. Useful when you need someone who knows your work first-hand.
+- **Timeline:** month by month.
+- **Not yet in a category:** what's still unfiled.
+
+Everything is configured in `notes.yaml` (see `portfolio-template/notes.yaml`):
+
+- **`categories`:** your headings, in your order.
+- **`auto`:** which category each kind of contribution goes to by default, for example
+  `pr_merged: original-work`.
+- **`items`:** extra categories and private notes for specific URLs.
+- **`extras`:** things that belong in the portfolio but never on your public profile.
+
+```
+python3 -m scout portfolio --data contributions.json --notes notes.yaml --out portfolio.md --csv portfolio.csv
+```
 
 ## Run it locally
 
@@ -155,6 +212,7 @@ Python 3.9+ and nothing to install. It uses `GITHUB_TOKEN` or `gh auth token`.
 python3 -m scout digest --dry-run --no-save    # print today's digest, change nothing
 python3 -m scout report                        # every bucket, as markdown
 python3 -m scout log --dry-run                 # what the contribution log would change
+python3 -m scout portfolio --notes notes.yaml   # build the private portfolio
 python3 -m unittest discover -s tests
 ```
 

@@ -4,6 +4,7 @@
   python3 -m scout digest --dry-run  # print them instead
   python3 -m scout report            # every bucket, as markdown
   python3 -m scout log               # rebuild your public contribution log
+  python3 -m scout portfolio         # build your private, categorised portfolio
 """
 
 import argparse
@@ -11,7 +12,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import board, contrib_log, slack
+from . import board, contrib_log, portfolio, slack
 from .contrib_log import load_log_config
 from .digest import build_digest, full_report, scan_candidates
 from .github import GitHub, GitHubError, resolve_token
@@ -32,7 +33,15 @@ def main(argv=None, gh=None, now=None, writer=None):
     lg.add_argument("--log-config", default=os.environ.get("SCOUT_LOG_CONFIG", "contrib-log.config.json"))
     lg.add_argument("--full", action="store_true", help="re-read your whole history instead of recent days")
     lg.add_argument("--dry-run", action="store_true", help="report what would change without writing")
+    pf = sub.add_parser("portfolio", help="build your private, categorised portfolio from the log's JSON")
+    pf.add_argument("--data", default="contributions.json", help="contributions.json from the contribution log")
+    pf.add_argument("--notes", default="notes.yaml", help="your private categories, tags and notes")
+    pf.add_argument("--out", default="portfolio.md")
+    pf.add_argument("--csv", default=None, help="also write a CSV here")
     args = parser.parse_args(argv)
+
+    if args.cmd == "portfolio":
+        return run_portfolio(args)
 
     now = now or datetime.now(timezone.utc).replace(microsecond=0)
     if gh is None:
@@ -114,6 +123,16 @@ def main(argv=None, gh=None, now=None, writer=None):
         print(f"error: {err}", file=sys.stderr)
     if len(digest.errors) > 3:
         print(f"error: ...and {len(digest.errors) - 3} more", file=sys.stderr)
+    return 0
+
+
+def run_portfolio(args):
+    records, notes, user = portfolio.build(args.data, args.notes)
+    changed = [p for p, text in ((args.out, portfolio.render(records, notes, user)),
+                                 (args.csv, portfolio.to_csv(records) if args.csv else None))
+               if p and portfolio.write_if_changed(p, text)]
+    print(f"{len(records)} items in the portfolio.")
+    print(f"Changed: {', '.join(changed)}" if changed else "No changes.")
     return 0
 
 

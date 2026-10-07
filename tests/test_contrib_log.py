@@ -76,7 +76,25 @@ class FakeGH:
     def user(self, login):
         return {"created_at": "2014-03-01T00:00:00Z"}
 
+    pulls = {
+        51657: {"additions": 29, "deletions": 2, "changed_files": 1, "comments": 8, "review_comments": 3,
+                "merged_by": {"login": "TylerHelmuth"}, "body": "Fixes #50433\n\nAlso closes open-telemetry/semantic-conventions#4133"},
+        51138: {"additions": 42, "deletions": 0, "changed_files": 1, "comments": 9, "review_comments": 2,
+                "merged_by": {"login": "songy23"}, "body": "Docs only."},
+    }
+    pull_fail = False
+
+    def pull(self, repo, n):
+        if self.pull_fail:
+            raise GitHubError("HTTP 502")
+        return self.pulls[n]
+
     def all_pr_reviews(self, repo, n):
+        if n == 51657:
+            return [{"user": {"login": "TylerHelmuth"}, "state": "APPROVED", "body": "Great fix, thanks!",
+                     "html_url": f"https://github.com/{C}/pull/51657#pullrequestreview-9", "submitted_at": "2026-10-06T19:00:00Z"},
+                    {"user": {"login": "krisztianfekete"}, "state": "APPROVED", "body": "",
+                     "html_url": "r2", "submitted_at": "2026-10-06T18:00:00Z"}]
         return self.reviews.get(n, [])
 
     def issue_comments(self, repo, n):
@@ -149,7 +167,11 @@ class RenderTest(unittest.TestCase):
         text = contrib_log.render_section(self.records(), CFG)
         self.assertTrue(text.startswith(contrib_log.START) and text.rstrip().endswith(contrib_log.END))
         self.assertIn("**2 merged PRs** · 1 open · **1 review** · 1 comment on others' issues and PRs · 1 issue opened", text)
-        self.assertIn("Components: `internal/k8sinventory`, `receiver/kubeletstats`, `receiver/sqlserver`", text)
+        self.assertIn("Active since Sep 2026 across 1 repository · components `internal/k8sinventory`, "
+                      "`receiver/kubeletstats`, `receiver/sqlserver`", text)
+        self.assertIn("### Merged", text)
+        self.assertIn("### Recent activity", text)
+        self.assertIn("<summary><b>All activity</b>", text)
         self.assertIn("Document TLS \\| handshake &lt;issue&gt;", text)
         self.assertNotIn("issuecomment-2", text)          # replies on my own PR are hidden by default
         self.assertNotIn("| Note |", text)
@@ -167,6 +189,60 @@ class RenderTest(unittest.TestCase):
         out = contrib_log.replace_section(readme, contrib_log.START + "\nnew\n" + contrib_log.END + "\n")
         self.assertEqual(out, "# Hi\n\nAbout me.\n\n<!-- contrib-log:start -->\nnew\n<!-- contrib-log:end -->\n\nFooter\n")
         self.assertIn("About me.\n\n<!-- contrib-log:start -->", contrib_log.replace_section("About me.\n", "<!-- contrib-log:start -->\nx\n<!-- contrib-log:end -->\n"))
+
+
+class DetailsTest(unittest.TestCase):
+    def test_merged_pr_details(self):
+        recs, errors = contrib_log.collect(FakeGH(), CFG, [], TODAY, full=True)
+        self.assertEqual(errors, [])
+        pr = next(r for r in recs if r["type"] == "pr" and r["number"] == 51657)
+        self.assertEqual((pr["additions"], pr["deletions"], pr["files"], pr["discussion"]), (29, 2, 1, 11))
+        self.assertEqual(pr["merged_by"], "TylerHelmuth")
+        self.assertEqual(pr["approved_by"], ["TylerHelmuth", "krisztianfekete"])
+        self.assertEqual(pr["fixes"], [f"https://github.com/{C}/issues/50433",
+                                       "https://github.com/open-telemetry/semantic-conventions/issues/4133"])
+        self.assertEqual([(q["by"], q["text"]) for q in pr["recognition"]], [("TylerHelmuth", "Great fix, thanks!")])
+        open_pr = next(r for r in recs if r["number"] == 51700)
+        self.assertNotIn("additions", open_pr)            # details only for merged PRs
+        review = next(r for r in recs if r["type"] == "review")
+        self.assertEqual(review["author"], "Srikar")
+
+    def test_detail_failure_keeps_previous_details(self):
+        first, _ = contrib_log.collect(FakeGH(), CFG, [], TODAY, full=True)
+        gh = FakeGH()
+        gh.pull_fail = True
+        recs, errors = contrib_log.collect(gh, CFG, first, TODAY)
+        self.assertTrue(errors)
+        self.assertEqual(next(r for r in recs if r["number"] == 51657 and r["type"] == "pr")["merged_by"], "TylerHelmuth")
+
+    def test_merged_line_and_hidden_closed_prs(self):
+        recs, _ = contrib_log.collect(FakeGH(), CFG, [], TODAY, full=True)
+        recs.append({"url": f"https://github.com/{C}/pull/51150", "type": "pr", "repo": C, "number": 51150,
+                     "title": "Closed duplicate", "date": "2026-09-19", "component": "receiver/sqlserver", "state": "closed"})
+        text = contrib_log.render_section(contrib_log.sort_records(recs), CFG)
+        self.assertIn("- **[#51657 Fix flaky cache sync tests](https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/51657)**"
+                      " · `internal/k8sinventory` · merged 2026-10-06 by TylerHelmuth · approved by krisztianfekete"
+                      " · +29 −2 in 1 file · fixes [#50433](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50433), "
+                      "[open-telemetry/semantic-conventions#4133](https://github.com/open-telemetry/semantic-conventions/issues/4133)", text)
+        self.assertNotIn("51150", text)
+        shown = dict(CFG, readme_hide_closed_prs=False)
+        self.assertIn("51150", contrib_log.render_section(contrib_log.sort_records(recs), shown))
+
+    def test_extras(self):
+        notes = {"extras": [{"date": date(2026, 11, 24), "type": "talk", "title": "Kubelet stats | in practice",
+                             "url": "https://example.org/talk", "note": "Community day", "tags": ["speaking"]},
+                            {"date": "2026-10-01", "type": "meeting", "title": "SIG meeting demo"},
+                            {"type": "talk"}]}
+        extras = contrib_log.parse_extras(notes)
+        self.assertEqual(len(extras), 2)
+        self.assertEqual(extras[1]["url"], "extra:2026-10-01:sig-meeting-demo")
+        recs, _ = contrib_log.collect(FakeGH(), CFG, [], TODAY, full=True)
+        text = contrib_log.render_section(contrib_log.sort_records(recs + extras), CFG)
+        self.assertIn("### Beyond GitHub", text)
+        self.assertIn("- 2026-11-24 · Talk · [Kubelet stats \\| in practice](https://example.org/talk) — Community day", text)
+        self.assertIn("- 2026-10-01 · Meeting · SIG meeting demo", text)
+        self.assertNotIn("speaking", text)
+        self.assertEqual(contrib_log.summary_counts(recs + extras)["merged"], 2)
 
 
 class RunTest(unittest.TestCase):
