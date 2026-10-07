@@ -1,0 +1,25 @@
+{
+  "title": "Contrib scout",
+  "github_user": "Abhimanyu9988",
+  "quiet_days": 45,
+  "stale_review_days": 7,
+  "max_issues_per_label": 60,
+  "post_when_empty": false,
+  "deliver": ["github"],
+  "board_repo": "Abhimanyu9988/oss-scout",
+  "repos": [
+    {
+      "repo": "open-telemetry/opentelemetry-collector-contrib",
+      "labels": [
+        "receiver/kubeletstats",
+        "receiver/k8scluster",
+        "processor/k8sattributes",
+        "receiver/k8sobjects",
+        "receiver/k8sevents",
+        "internal/k8sinventory",
+        "extension/k8sobserver",
+        "receiver/sqlserver"
+      ]
+    }
+  ]
+}

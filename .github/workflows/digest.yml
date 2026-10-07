@@ -1,0 +1,58 @@
+name: Daily digest
+
+on:
+  schedule:
+    # 06:52 UTC on weekdays = 08:52 in Brussels in summer, 07:52 in winter.
+    - cron: "52 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print to the job summary instead of posting"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write   # only for the board issue in this repo
+
+concurrency:
+  group: digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The state file (what was already reported) lives in the Actions cache, not in git.
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: .scout-state
+          key: scout-state-${{ github.run_id }}
+          restore-keys: scout-state-
+
+      - name: Run digest
+        env:
+          SCOUT_GITHUB_TOKEN: ${{ secrets.SCOUT_GITHUB_TOKEN || github.token }}
+          SCOUT_WRITE_TOKEN: ${{ github.token }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m scout digest --dry-run --no-save
+          else
+            python -m scout digest
+          fi
+
+      - name: Save state
+        if: success() && inputs.dry_run != true
+        uses: actions/cache/save@v4
+        with:
+          path: .scout-state
+          key: scout-state-${{ github.run_id }}
