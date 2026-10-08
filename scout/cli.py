@@ -96,12 +96,20 @@ def main(argv=None, gh=None, now=None, writer=None):
         # day is reported again tomorrow instead of being lost.
         try:
             if "github" in deliver:
-                repo = cfg.get("board_repo") or os.environ.get("GITHUB_REPOSITORY")
+                repo = cfg.get("board_repo") or os.environ.get("GITHUB_REPOSITORY", "")
+                here = os.environ.get("GITHUB_REPOSITORY", "") if os.environ.get("GITHUB_ACTIONS") else ""
                 if not repo:
                     print("error: set board_repo in the config (owner/name of your scout repo)", file=sys.stderr)
                     return 2
+                if here and repo.lower() != here.lower() and not os.environ.get("SCOUT_BOARD_TOKEN"):
+                    print(f"error: this workflow runs in {here}, but board_repo in scout.config.json is {repo}.\n"
+                          f"A workflow can only post to its own repository. If {here} is an old copy, disable this\n"
+                          f"workflow (gh workflow disable digest.yml -R {here}); otherwise set board_repo to {here}.",
+                          file=sys.stderr)
+                    return 2
                 if writer is None:
-                    writer = GitHub(os.environ.get("SCOUT_WRITE_TOKEN") or resolve_token())
+                    writer = GitHub(os.environ.get("SCOUT_BOARD_TOKEN") or os.environ.get("SCOUT_WRITE_TOKEN")
+                                    or resolve_token())
                 url = board.publish(writer, repo, digest, cfg, now, comment=not quiet_day)
                 print(f"Board updated: {url}" + ("" if quiet_day else f" (comment with {count} item(s))"))
             if "slack" in deliver and not quiet_day:

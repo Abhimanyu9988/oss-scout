@@ -20,22 +20,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Get oss-scout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: __SCOUT_REPO__
           ref: main
           path: .oss-scout
 
       - name: Get your public contribution log
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: __PROFILE_REPO__
           path: .profile
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

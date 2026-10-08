@@ -116,3 +116,26 @@ class CliDeliveryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WrongRepoTest(unittest.TestCase):
+    def test_actions_run_in_another_repo_explains_itself(self):
+        import contextlib as cl
+        tmp = tempfile.mkdtemp()
+        cfg_path, state_path = os.path.join(tmp, "c.json"), os.path.join(tmp, "s.json")
+        with open(cfg_path, "w") as fh:
+            json.dump(dict(CFG, deliver=["github"], board_repo=HOME), fh)
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": HOME + "-archive"}
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        err = io.StringIO()
+        try:
+            with cl.redirect_stdout(io.StringIO()), cl.redirect_stderr(err):
+                rc = main(["--config", cfg_path, "digest", "--state", state_path], gh=world(), now=NOW, writer=FakeWriter())
+        finally:
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        self.assertEqual(rc, 2)
+        self.assertIn("A workflow can only post to its own repository", err.getvalue())
+        self.assertIn("gh workflow disable digest.yml -R Abhimanyu9988/oss-scout-archive", err.getvalue())
+        self.assertFalse(os.path.exists(state_path))

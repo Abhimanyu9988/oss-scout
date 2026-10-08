@@ -292,6 +292,11 @@ run_and_watch() {   # run_and_watch owner/repo workflow.yml [extra gh workflow r
 # ───────────────────────────────────────────────────────────── 6
 step 6 "Make it public (optional)"
 
+if gh repo view "$REPO-archive" >/dev/null 2>&1 \
+   && [ "$(gh workflow view digest.yml -R "$REPO-archive" --json state --jq .state 2>/dev/null)" = "active" ]; then
+  gh workflow disable digest.yml -R "$REPO-archive" >/dev/null 2>&1 \
+    && ok "Switched off the daily run in the old copy, $REPO-archive"
+fi
 VISIBILITY="$(gh repo view "$REPO" --json visibility --jq .visibility 2>/dev/null || echo UNKNOWN)"
 if [ "$VISIBILITY" = "PUBLIC" ]; then
   ok "$REPO is public"
@@ -314,7 +319,8 @@ else
       info "The board issue starts fresh there with a new 'watching from today' comment."
       if ask "Go ahead?"; then
         gh repo rename "$ARCHIVE" -R "$REPO" --yes >/dev/null || fail "Couldn't rename the repo."
-        ok "Old repo kept, private: https://github.com/$HAVE/$ARCHIVE"
+        gh workflow disable digest.yml -R "$HAVE/$ARCHIVE" >/dev/null 2>&1 || true
+        ok "Old repo kept, private, with its daily run switched off: https://github.com/$HAVE/$ARCHIVE"
         git checkout -q --orphan oss-scout-public
         git add -A
         git commit -qm "oss-scout: a daily digest of open-source work that needs you"
