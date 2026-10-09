@@ -163,6 +163,15 @@ class RenderTest(unittest.TestCase):
         recs, _ = contrib_log.collect(FakeGH(), CFG, [], TODAY, full=True)
         return contrib_log.apply_annotations(recs, annotations or {})
 
+    def test_activity_block_keeps_to_recent_months(self):
+        recs = self.records()
+        now = contrib_log.render_section(recs, CFG, TODAY)
+        self.assertNotIn("older item", now)
+        later = contrib_log.render_section(recs, dict(CFG, readme_activity_months=1), date(2027, 6, 1))
+        self.assertIn("<b>All activity</b>, last 1 month", later)
+        self.assertRegex(later, r"_\d+ older items? kept in \[contributions.json\]")
+        self.assertIn("**2 merged PRs**", later)          # headline and merged list keep everything
+
     def test_section(self):
         text = contrib_log.render_section(self.records(), CFG)
         self.assertTrue(text.startswith(contrib_log.START) and text.rstrip().endswith(contrib_log.END))

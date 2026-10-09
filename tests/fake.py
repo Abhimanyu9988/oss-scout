@@ -57,6 +57,9 @@ class FakeWriter:
     def add_comment(self, repo, number, body):
         self.calls.append(("comment", number, body))
 
+    def close_issue(self, repo, number):
+        self.calls.append(("close", number))
+
 
 class FakeGitHub:
     def __init__(self, issues_by_label=None, timelines=None, searches=None, prs_by_label=None, reviews=None):

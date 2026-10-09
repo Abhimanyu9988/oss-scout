@@ -92,6 +92,7 @@ Setup step 8 does all of this for you. By hand:
 | `readme_hide_closed_prs` | true | Leave PRs closed without merging out of the README |
 | `readme_recent_items` | 5 | How many items "Recent activity" shows |
 | `readme_show_tags` | false | Show annotation tags in the README |
+| `readme_activity_months` | 12 | Months covered by the collapsed "All activity" list; the headline, Merged and the JSON keep everything. 0 shows all |
 | `component_label_patterns` | OTel-style label prefixes | Regexes that pick the component label |
 | `orcid` | none | Your ORCID iD, for publications and peer reviews |
 | `openalex_email` | none | Optional; puts OpenAlex requests in its faster "polite pool" |

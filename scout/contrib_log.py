@@ -39,6 +39,7 @@ DEFAULTS = {
     "readme_show_tags": False,
     "readme_hide_closed_prs": True,
     "readme_recent_items": 5,
+    "readme_activity_months": 12,   # "All activity" covers this many months; everything stays in the JSON
     "orcid": "",
     "openalex_email": "",
     "links": {},
@@ -516,7 +517,7 @@ def merged_line(r):
     return line
 
 
-def render_section(records, cfg):
+def render_section(records, cfg, today=None):
     shown = collapse_reviews(_visible(records, cfg))
     gh_shown = github_records(shown)
     extras = sort_records([r for r in records if r["type"] == "extra"])
@@ -598,9 +599,18 @@ def render_section(records, cfg):
         lines.append("")
 
     has_notes = any(r.get("note") for r in gh_shown)
-    lines += ["<details>", "<summary><b>All activity</b>, by repository and component</summary>", ""]
+    months = cfg.get("readme_activity_months") or 0
+    activity, older = gh_shown, 0
+    if today and months:
+        cutoff = (today - timedelta(days=round(months * 30.44))).isoformat()
+        activity = [r for r in gh_shown if (r.get("date") or "") >= cutoff]
+        older = len(gh_shown) - len(activity)
+    span = f"last {_plural(months, 'month')}" if older else "by repository and component"
+    lines += ["<details>", f"<summary><b>All activity</b>, {span}</summary>", ""]
+    if older:
+        lines += [f"_{_plural(older, 'older item')} kept in [{cfg['data_path']}]({cfg['data_path']})._", ""]
     by_repo = {}
-    for r in gh_shown:
+    for r in activity:
         by_repo.setdefault(r["repo"], []).append(r)
     for repo in sorted(by_repo, key=lambda k: (-len(by_repo[k]), k)):
         lines += [f"#### {repo}", ""]
@@ -675,7 +685,7 @@ def run(gh, cfg, today, full=False, dry_run=False, base_dir=".", scholar_fetch=N
     if os.path.exists(readme_path):
         with open(readme_path, encoding="utf-8") as fh:
             readme_old = fh.read()
-    readme_new = replace_section(readme_old, render_section(records, cfg))
+    readme_new = replace_section(readme_old, render_section(records, cfg, today))
 
     changed = []
     for path, new in ((data_path, data_text), (readme_path, readme_new)):

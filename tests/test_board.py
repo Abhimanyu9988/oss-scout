@@ -157,3 +157,22 @@ class WrongRepoTest(unittest.TestCase):
         self.assertIn("A workflow can only post to its own repository", err.getvalue())
         self.assertIn("gh workflow disable digest.yml -R Abhimanyu9988/oss-scout-archive", err.getvalue())
         self.assertFalse(os.path.exists(state_path))
+
+
+class SizeTest(unittest.TestCase):
+    def test_sections_are_capped(self):
+        from scout.digest import Item
+        digest, _ = baseline()
+        digest.board_free = [Item(f"o/r#{n}", f"https://github.com/o/r/issues/{n}", "t", "") for n in range(40)]
+        body = board.render_board(digest, dict(CFG, board_section_limit=10), NOW, HOME)
+        self.assertIn("### Free in your areas (40)", body)
+        self.assertIn("…and 30 more, not listed here", body)
+        self.assertLess(len(body), board.BODY_LIMIT)
+
+    def test_busy_board_moves_to_a_fresh_issue(self):
+        digest, _ = baseline()
+        w = FakeWriter(existing={"number": 7, "html_url": "u", "comments": 100})
+        url = board.publish(w, HOME, digest, CFG, NOW, comment=False)
+        self.assertEqual([c[0] for c in w.calls], ["find", "label", "create", "comment", "close"])
+        self.assertIn("Continued in #1", w.calls[3][2])
+        self.assertEqual(url, f"https://github.com/{HOME}/issues/1")

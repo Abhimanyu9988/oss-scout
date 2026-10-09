@@ -95,6 +95,8 @@ since the last one, so this stays within GitHub's rate limits.
 | `ping_after_days` | 7 | When your own unreviewed PR shows up under Needs you |
 | `claim_reminder_days` | 14 | When an issue you claimed without a PR shows up |
 | `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
+| `board_section_limit` | 25 | Items listed per board section; the rest are counted |
+| `board_max_comments` | 100 | After this many comments, the board moves to a fresh issue and the old one is closed with a link |
 | `post_when_empty` | false | Comment even on days with nothing new |
 | `title` | Contribution scout | Header of the Slack message |
 
@@ -111,3 +113,10 @@ It only comments when something changed, so running it more often doesn't add no
 ---
 
 [Back to the README](../README.md)
+
+## How big it gets
+
+Nothing grows in the repository itself: the board lives in an issue and the run's memory in the Actions cache,
+which keeps only the latest copy. Each board section lists at most 25 items, and the "New across your
+organisations" comment at most 5. Comments arrive only on days with news, and after 100 the board moves to a new
+issue so the page stays quick to load.

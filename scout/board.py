@@ -14,6 +14,9 @@ LABEL = "oss-scout"
 LABEL_COLOR = "0e8a16"
 TITLE = "Contribution board"
 MAX_COMMENT_LINES = 25
+SECTION_LIMIT = 25          # items per board section; the rest are counted, not listed
+MAX_COMMENTS = 100          # then the board moves to a fresh issue, so the page stays quick
+BODY_LIMIT = 60000          # GitHub refuses issue bodies over 65,536 characters
 
 
 def quiet_link(url):
@@ -34,19 +37,24 @@ def _line(item):
     return f"- [{_ref(item.key)}]({quiet_link(item.url)}) {safe(item.title)}{detail}"
 
 
-def _section(heading, items, limit=None, empty="Nothing right now."):
+def _capped(heading, items, limit=None, empty="Nothing right now.", more="see the board above"):
     lines = [f"### {heading} ({len(items)})", ""]
     if not items:
         lines.append(f"_{empty}_")
     shown = items if limit is None else items[:limit]
     lines += [_line(i) for i in shown]
     if limit is not None and len(items) > limit:
-        lines.append(f"- _…and {len(items) - limit} more, see the board above_")
+        lines.append(f"- _…and {len(items) - limit} more, {more}_")
     lines.append("")
     return lines
 
 
 def render_board(digest, cfg, now, home_repo=None):
+    cap = cfg.get("board_section_limit", SECTION_LIMIT)
+
+    def _section(heading, items, empty="Nothing right now."):
+        return _capped(heading, items, cap, empty=empty, more="not listed here")
+
     tool = f"[oss-scout](https://github.com/{home_repo})" if home_repo else "oss-scout"
     repos = ", ".join(r["repo"] for r in cfg["repos"])
     areas = ", ".join(sorted({lbl for r in cfg["repos"] for lbl in (r.get("labels") or ["everything"])}))
@@ -81,7 +89,11 @@ def render_board(digest, cfg, now, home_repo=None):
     ]
     if digest.errors:
         lines += ["", f"_Last run was partial: {len(digest.errors)} request(s) failed._"]
-    return "\n".join(lines) + "\n"
+    body = "\n".join(lines) + "\n"
+    if len(body) > BODY_LIMIT:
+        body = body[:BODY_LIMIT].rsplit("\n", 1)[0] + "\n\n_Board cut short to fit GitHub's size limit. " \
+               "Lower `board_section_limit` or watch fewer labels._\n"
+    return body
 
 
 def render_comment(digest, cfg, now):
@@ -99,14 +111,14 @@ def render_comment(digest, cfg, now):
             "",
         ]
     if digest.needs_you:
-        lines += _section("Needs you", digest.needs_you, MAX_COMMENT_LINES)
+        lines += _capped("Needs you", digest.needs_you, MAX_COMMENT_LINES)
     if digest.to_pick:
         heading = "Most recent free issues" if digest.baseline else "New to pick up"
-        lines += _section(heading, digest.to_pick, MAX_COMMENT_LINES)
+        lines += _capped(heading, digest.to_pick, MAX_COMMENT_LINES)
     if digest.discovered:
-        lines += _section("New across your organisations", digest.discovered, 5)
+        lines += _capped("New across your organisations", digest.discovered, 5)
     if digest.review_queue:
-        lines += _section("Newly waiting for a first review", digest.review_queue, MAX_COMMENT_LINES)
+        lines += _capped("Newly waiting for a first review", digest.review_queue, MAX_COMMENT_LINES)
     if digest.errors:
         lines += [f"_Partial scan: {len(digest.errors)} request(s) failed. First: {safe(digest.errors[0][:200])}_"]
     return "\n".join(lines).rstrip() + "\n"
@@ -117,7 +129,13 @@ def publish(writer, repo, digest, cfg, now, comment=True):
     Returns the issue's URL."""
     body = render_board(digest, cfg, now, repo)
     issue = writer.find_open_issue(repo, LABEL)
-    if issue is None:
+    if issue is not None and issue.get("comments", 0) >= cfg.get("board_max_comments", MAX_COMMENTS):
+        old = issue
+        writer.ensure_label(repo, LABEL, LABEL_COLOR, "Daily contribution board from oss-scout")
+        issue = writer.create_issue(repo, TITLE, body, [LABEL])
+        writer.add_comment(repo, old["number"], f"Continued in #{issue['number']}, to keep this page quick to load.")
+        writer.close_issue(repo, old["number"])
+    elif issue is None:
         writer.ensure_label(repo, LABEL, LABEL_COLOR, "Daily contribution board from oss-scout")
         issue = writer.create_issue(repo, TITLE, body, [LABEL])
     else:

@@ -168,6 +168,11 @@ class GitHub:
         data, _ = self._request(f"{self.api}/repos/{repo}/issues/{number}", "PATCH", {"body": body})
         return data
 
+    def close_issue(self, repo, number):
+        data, _ = self._request(f"{self.api}/repos/{repo}/issues/{number}", "PATCH",
+                                {"state": "closed", "state_reason": "completed"})
+        return data
+
     def add_comment(self, repo, number, body):
         data, _ = self._request(f"{self.api}/repos/{repo}/issues/{number}/comments", "POST", {"body": body})
         return data
