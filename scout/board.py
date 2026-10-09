@@ -56,6 +56,8 @@ def render_board(digest, cfg, now, home_repo=None):
         f"Areas: {safe(areas)}",
         "",
     ]
+    lines += _section("PRs to review on threads you're in", digest.board_followups,
+                      empty="Nothing waiting for you.")
     lines += _section("Free to pick up", digest.board_free,
                       empty="No unclaimed issues in these areas today.")
     lines += _section(f"Claimed but quiet for {cfg.get('quiet_days', 45)}+ days", digest.board_quiet)

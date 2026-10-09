@@ -1,304 +1,46 @@
 # oss-scout
 
-Tells you which open-source issues and pull requests need you, and stays quiet when
-nothing changed.
+Tells you which open-source issues and pull requests need you, keeps a public log of what you've done, and stays
+quiet when nothing changed.
 
-You list the repositories and labels you care about. Every weekday morning it scans
-them and keeps a **Contribution board** issue in your own copy of this repo up to date:
+It runs on GitHub Actions, reads only public data, and never comments on, claims or opens anything upstream.
 
-- **Free to pick up:** no PR, no claim comment, no blocking label.
-- **Claimed but quiet:** someone said they'd take it 45+ days ago and never opened a PR.
-- **PRs waiting for a first review:** open for 7+ days, and nobody has reviewed them yet.
-  Reviewing these is the fastest way to become useful to a project's maintainers.
+## What it does
 
-When something changes, it adds a comment to the board that mentions you, so it reaches
-the GitHub app and your email:
+- **[A daily board](docs/board.md):** one issue in your own repo listing PRs to review on threads you're in, issues
+  that are really free to pick up, claims that went quiet, and PRs in your areas nobody has reviewed. When something
+  changes it mentions you, so it reaches your phone.
+- **[A contribution log](docs/contribution-log.md):** an always-current section of your GitHub profile README with
+  your merged PRs, reviews, comments, issues, and optionally publications and peer reviews from ORCID.
+- **[A private portfolio](docs/portfolio.md):** the same record sorted into your own categories, with reviewers'
+  words of recognition, the people you've worked with, CV-ready lines and LinkedIn drafts.
 
-- **Needs you:** a review was requested from you, or someone commented, reviewed, merged or
-  closed an issue or PR you're involved in.
-- **New to pick up:** an issue just became free, or a claim just went quiet.
-- **Newly waiting for a first review.**
-
-On most days that's zero to three lines. When nothing changed, there's no comment.
-Slack is optional, as a second place to receive the same digest.
-
-It reads public data only. The single thing it writes is that board issue, in your own
-repo. It never comments on, claims, reviews or opens anything upstream. What you say on
-an issue is up to you, in your own words.
-
-## Set it up (about 5 minutes)
+## Set it up in about 5 minutes
 
 ```
+git clone https://github.com/Abhimanyu9988/oss-scout
+cd oss-scout
 ./setup.sh
 ```
 
-The guided setup:
-1. Checks Python and the GitHub CLI.
-2. Makes sure you're signed in as the account in `scout.config.json`.
-3. Runs a test scan on real data.
-4. Creates your repo.
-5. Asks whether you also want Slack.
-6. Offers to make the repo public.
-7. Sends the first digest and opens your board.
-8. Offers to add a contribution log to your GitHub profile, with an optional intro line
-   (see below).
-9. Offers a private portfolio repo (see below).
+The guided setup creates your own copy under your account, checks your tools, signs you in to GitHub, runs a test scan, creates your repos and sends the first
+digest. It asks before every change, and you can run it again at any time. Details in
+[Getting started](docs/getting-started.md).
 
-It asks before every change. Run it again at any time to finish, update or push changes
-to your config.
+## Documentation
 
-Want it on your phone? Install the GitHub mobile app and allow notifications.
-
-### Or by hand
-
-1. **Copy this repo** to your account and edit `scout.config.json`: your GitHub handle,
-   `board_repo` (your copy, `owner/name`), and the repos and labels to watch. Label names
-   must match the repo's labels exactly; check each repo's *Issues → Labels* page.
-2. **Run the workflow once.** Go to *Actions → Daily digest → Run workflow*. The first run
-   creates the board and posts a short "watching from today" comment. From then on you
-   only hear about changes.
-3. **Optional Slack.** Add `"slack"` to `deliver`. Create an incoming webhook in a
-   workspace you control and save it as the repo secret `SLACK_WEBHOOK_URL`.
-   Community workspaces like CNCF's generally don't allow personal apps.
-
-It runs at 06:52 UTC on weekdays. To change that, edit the `cron` line in
-`.github/workflows/digest.yml`.
-
-## How it decides an issue is free
-
-GitHub's "linked PR" filter misses a lot, so it reads the timeline of every open,
-unassigned issue and looks for three things:
-
-1. **Cross-referenced PRs,** including ones in other repos (such as a semantic-conventions
-   PR), and manually linked PRs.
-2. **Claim comments** like "I'd like to work on this" or "happy to pick it up". The newest
-   claim decides the bucket:
-   - recent means *taken*
-   - 45+ days with no PR means *claimed but quiet*
-   - your own claim means *yours*
-3. **Blocking labels:** waiting for author, code owners or semantic conventions, or
-   discussion needed.
-
-Claim detection is a heuristic. Read the thread before you comment.
-
-## Sharing the board
-
-If you make your repo public, the board is a live list of open work that anyone can use.
-It's built so that this doesn't bother upstream maintainers:
-
-- **No backlinks.** Links go through `redirect.github.com`, as Dependabot's do, so the board
-  doesn't leave a "mentioned this issue" note on every issue it lists.
-- **No pings.** Any `@handle` in an issue title is neutralised, so the board never notifies
-  anyone except you.
-
-Others can also copy the repo and point it at their own areas.
-
-## Contribution log on your profile
-
-The digest looks inward: what needs you. The log looks outward: what you've done. It
-keeps a section of your profile README (`you/you`) up to date, rebuilt every day from
-GitHub's own record, so nothing is logged by hand:
-
-- **PRs you opened,** with opened and merged dates and their component label.
-- **Reviews you left on other people's PRs,** each linked to the review itself.
-- **Comments you wrote,** each linked to the comment itself rather than just the thread.
-- **Issues you opened.**
-
-What visitors see, without clicking anything:
-
-- **A summary:** merged PRs, reviews, comments on others' issues and PRs, issues opened,
-  how long you've been active, and the components you've worked in.
-- **Merged:** each merged PR with its component, who merged and approved it, its size,
-  and the issues it fixed.
-- **Recent activity:** your five latest items.
-- **Publications and peer review** (optional): from your public ORCID record, with
-  citation counts and journal names from OpenAlex.
-- **Beyond GitHub:** talks, meetings, program committees and posts you list yourself.
-- **Links** to your LinkedIn and ORCID profiles.
-
-Below that, everything else sits in one collapsed block, grouped by repo and then
-component, newest first. A full copy, including words of recognition from reviewers, is
-kept in `contributions.json`.
-
-How it behaves:
-
-- **Only the marked section changes.** The rest of your README is never touched:
-
-  ```
-  <!-- contrib-log:start --> … <!-- contrib-log:end -->
-  ```
-
-  If those markers aren't there yet, the section is added at the end.
-- **It commits only when something changed.** The output is deterministic, with no
-  timestamps that change every day.
-- **Daily runs look back 14 days.** Sunday runs, and manual runs with *full* ticked,
-  re-read your whole history. That also removes anything you've since deleted.
-- **It handles GitHub search's 1,000-result cap** by splitting the date range until each
-  slice fits.
-- **Replies on your own PRs, and PRs closed without merging, stay in the JSON** but are
-  left out of the README.
-- **Annotations are optional.** In `annotations.yaml`, add a one-line note keyed by the
-  URL of any PR, issue, review or comment, and it appears in the Note column. Tags you
-  add stay in the JSON unless you set `readme_show_tags`.
-- **Work that happens outside GitHub** goes in an `extras:` list in the same file, and
-  appears under "Beyond GitHub":
-
-  ```yaml
-  extras:
-    - date: 2026-11-24
-      type: talk          # talk, meeting, review, post, mentoring, workshop, podcast, other
-      title: Kubelet stats in practice
-      url: https://example.org/talk
-      note: Community day keynote
-  ```
-- **Permissions:** it reads public data only, and the workflow's write permission covers
-  just its own repo.
-
-**Publications and peer reviews from ORCID.** Add `"orcid": "0000-0000-0000-0000"` to
-the config. Each run then reads two parts of your public ORCID record, your works and
-your peer reviews, and nothing else (not employment, education or other personal
-sections). It looks up citation counts and journal names on OpenAlex. Both APIs are
-free and need no key. Journals push papers to ORCID automatically once you've linked
-them, and services like Web of Science Reviewer Recognition do the same for peer
-reviews. If ORCID can't be reached, the previous day's list is kept.
-
-**LinkedIn** doesn't allow automated profile updates or reliable automated posting. So
-the log shows a link to your profile (`"links": {"LinkedIn": "https://…"}`), and the
-private portfolio writes drafts you can post yourself.
-
-Setup step 8 does all of this for you. By hand:
-
-1. Copy `profile-template/contrib-log.yml` into `you/you` as `.github/workflows/contrib-log.yml`
-   and replace `__SCOUT_REPO__` with this repo.
-2. Add a `contrib-log.config.json` there with your handle and orgs, for example
-   `{"github_user": "you", "orgs": ["open-telemetry"]}`.
-3. Run the workflow once with *full* ticked.
-
-| Log setting | Default | Meaning |
-|---|---|---|
-| `github_user` | required | Whose contributions to log |
-| `orgs` / `repos` | at least one | Where to look, e.g. `["open-telemetry"]` |
-| `lookback_days` | 14 | How far back daily runs re-check |
-| `readme_path` / `data_path` | `README.md` / `contributions.json` | Output files |
-| `annotations_path` | `annotations.yaml` | Your notes (`.json` also works) |
-| `readme_include_own_comments` | false | Also list replies on your own PRs and issues |
-| `readme_hide_closed_prs` | true | Leave PRs closed without merging out of the README |
-| `readme_recent_items` | 5 | How many items "Recent activity" shows |
-| `readme_show_tags` | false | Show annotation tags in the README |
-| `component_label_patterns` | OTel-style label prefixes | Regexes that pick the component label |
-| `orcid` | none | Your ORCID iD, for publications and peer reviews |
-| `openalex_email` | none | Optional; puts OpenAlex requests in its faster "polite pool" |
-| `links` | none | Links to show, e.g. `{"LinkedIn": "https://www.linkedin.com/in/you"}` |
-
-## Private portfolio
-
-Your public profile shows the work. A portfolio explains it, in your own categories,
-for a promotion case, a CV, a fellowship or any application. `scout portfolio` builds
-one from the log's `contributions.json` and a notes file you keep private. Setup step 9
-puts both in a private repo that rebuilds `portfolio.md` and `portfolio.csv` every day.
-The portfolio contains:
-
-- **At a glance:** merged PRs and lines changed, reviews of others' work, discussions,
-  repositories and components, the maintainers who approved or merged your work, and
-  words of recognition.
-- **CV-ready lines** you can paste.
-- **Every item filed under your categories,** with its evidence: size, approvals, who
-  merged it, what it fixed, and what reviewers said about it.
-- **Recognition from peers:** the reviewers' comments that praised your work, with links.
-  Plain "thanks" and review requests don't count; it quotes the sentence that does the
-  praising.
-- **People you've worked with:** who merged, approved or praised your work, and whose PRs
-  you reviewed. Useful when you need someone who knows your work first-hand.
-- **Publications and peer reviews** from ORCID, if configured.
-- **Timeline:** month by month.
-- **For LinkedIn:** a ready-to-edit About paragraph, and draft posts for PRs merged in the
-  last 30 days and papers from the last 90.
-- **Not yet in a category:** what's still unfiled.
-
-Everything is configured in `notes.yaml` (see `portfolio-template/notes.yaml`):
-
-- **`categories`:** your headings, in your order.
-- **`auto`:** which category each kind of contribution goes to by default, for example
-  `pr_merged: original-work`.
-- **`items`:** extra categories and private notes for specific URLs.
-- **`extras`:** things that belong in the portfolio but never on your public profile.
-
-```
-python3 -m scout portfolio --data contributions.json --notes notes.yaml --out portfolio.md --csv portfolio.csv
-```
-
-## Changing things later
-
-Every part separates what's rebuilt daily from what's yours. Your files are never
-overwritten:
-
-| Repo | Rebuilt daily (don't hand-edit) | Yours to edit |
-|---|---|---|
-| your copy of oss-scout | the board issue | `scout.config.json`: repos and labels to watch, delivery |
-| your profile, `you/you` | the marked log section, `contributions.json` | the rest of your README, `contrib-log.config.json`, `annotations.yaml` |
-| your private portfolio | `portfolio.md`, `portfolio.csv` | `notes.yaml` |
-
-To change something:
-
-1. **Edit the file on github.com** (pencil icon), or locally and push.
-2. **Wait for the next daily run,** or start one now: *Actions*, pick the workflow, *Run
-   workflow*. On the profile repo, tick *full* to re-read your whole history.
-
-Running `./setup.sh` again also works. It skips whatever is already done and lets you
-change answers such as your intro line, ORCID iD or LinkedIn link.
-
-### Using a fixed version
-
-The profile and portfolio workflows fetch this repo's code on every run (`ref: main` in
-their workflow files). That's convenient for the author. If you're using someone else's
-copy, pin a release so their later changes can't surprise you:
-
-```yaml
-        with:
-          repository: Abhimanyu9988/oss-scout
-          ref: v0.3.0
-```
-
-## Run it locally
-
-Python 3.9+ and nothing to install. It uses `GITHUB_TOKEN` or `gh auth token`.
-
-```
-python3 -m scout digest --dry-run --no-save    # print today's digest, change nothing
-python3 -m scout report                        # every bucket, as markdown
-python3 -m scout log --dry-run                 # what the contribution log would change
-python3 -m scout portfolio --notes notes.yaml   # build the private portfolio
-python3 -m unittest discover -s tests
-```
-
-## Configuration
-
-| Key | Default | Meaning |
-|---|---|---|
-| `github_user` | required | Your GitHub handle, used for review requests, your activity and your claims |
-| `repos` | required | List of `{"repo": "owner/name", "labels": [...]}` |
-| `deliver` | `["github"]` | `"github"` (board issue) and/or `"slack"` |
-| `board_repo` | the repo the workflow runs in | Where the board issue lives |
-| `quiet_days` | 45 | Days without a PR before a claim counts as quiet |
-| `stale_review_days` | 7 | Age before an unreviewed PR joins the review list |
-| `max_issues_per_label` | 60 | Cap on issues read per label |
-| `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
-| `post_when_empty` | false | Comment even on days with nothing new |
-| `title` | Contribution scout | Header of the Slack message |
-
-## Good to know
-
-- **The run's memory is kept in the Actions cache,** not in git. This is the record of what
-  it already told you. If the cache is evicted (GitHub drops caches unused for 7 days), the
-  next run simply posts a new baseline.
-- **Failed days aren't lost.** If posting fails, nothing is marked as seen, so the next run
-  reports it again.
-- **GitHub turns off scheduled workflows in public repos after 60 days without commits.**
-  If the comments stop, re-enable the workflow from the Actions tab.
+| Page | What's in it |
+|---|---|
+| [Getting started](docs/getting-started.md) | Setup, by script or by hand, and running it locally |
+| [The daily board](docs/board.md) | What each section means, how "free" is decided, settings, how often it runs |
+| [Contribution log](docs/contribution-log.md) | What goes on your profile, annotations, talks, ORCID, LinkedIn |
+| [Private portfolio](docs/portfolio.md) | Categories, rules, private notes |
+| [Changing things later](docs/changing-things.md) | Which files are yours to edit, which are rebuilt, pinning a version |
+| [Troubleshooting](docs/troubleshooting.md) | Problems people have hit, and the fix for each |
+| [A contributor's playbook](docs/playbook.md) | Lessons from a first month contributing to OpenTelemetry |
 
 ## Roadmap
 
-- Hide board items you've already responded to
 - Chat commands in Slack (`/scout next`, `/scout check <issue>`)
 - Optional thread summaries
 

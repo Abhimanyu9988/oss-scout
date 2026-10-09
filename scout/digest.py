@@ -1,5 +1,6 @@
 """Scan the configured repos and work out what changed since the last run."""
 
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -27,6 +28,7 @@ class Digest:
     board_free: list = field(default_factory=list)     # full current lists, for the board issue
     board_quiet: list = field(default_factory=list)
     board_queue: list = field(default_factory=list)
+    board_followups: list = field(default_factory=list)  # open PRs on threads you're in, not yet reviewed
 
     def is_empty(self):
         return not (self.needs_you or self.to_pick or self.review_queue or self.errors or self.baseline)
@@ -125,6 +127,79 @@ def activity_on_mine(gh, cfg, since, errors):
     return lines
 
 
+OFFER_RE = re.compile(r"\b(?:happy|glad|willing|keen) to (?:help )?review|\bi(?:'ll| will| can| could) review|"
+                      r"\bwill (?:take a look|review)\b|\bping me\b", re.I)
+
+
+def _repo_from(issue):
+    full = (issue.get("repository") or {}).get("full_name")
+    if full:
+        return full
+    return "/".join((issue.get("repository_url") or "").rstrip("/").split("/")[-2:])
+
+
+def followups(gh, cfg, now, errors):
+    """Open PRs by other people that are linked to open issues you've opened or commented on,
+    which you haven't reviewed yet. Returns {key: Item}."""
+    user = cfg["github_user"]
+    since = (now - timedelta(days=cfg.get("followup_days", 60))).strftime("%Y-%m-%d")
+    q = f"involves:{user} is:issue is:open updated:>={since} {_repo_scope(cfg)}"
+    try:
+        threads = gh.search_issues(q, limit=cfg.get("followup_threads", 40))
+    except GitHubError as err:
+        errors.append(f"follow-up search: {err}")
+        return {}
+    found = {}
+    for thread in threads:
+        repo = _repo_from(thread)
+        try:
+            events = gh.timeline(repo, thread["number"])
+        except GitHubError as err:
+            errors.append(f"{repo}#{thread['number']} timeline: {err}")
+            continue
+        mine = [ev for ev in events if ev.get("event") == "commented" and actor_of(ev).lower() == user.lower()]
+        offered = any(OFFER_RE.search(ev.get("body") or "") for ev in mine)
+        opened = (thread.get("user") or {}).get("login", "").lower() == user.lower()
+        if not (mine or opened):
+            continue
+        role = "you offered to review" if offered else ("your issue" if opened else "you commented")
+        ref = f"#{thread['number']}"
+        prs_here, connected, any_pr_ref = [], False, False
+        for ev in events:
+            if ev.get("event") == "connected":
+                connected = True
+            if ev.get("event") != "cross-referenced":
+                continue
+            src = (ev.get("source") or {}).get("issue") or {}
+            if "pull_request" not in src:
+                continue
+            any_pr_ref = True
+            author = (src.get("user") or {}).get("login", "")
+            if src.get("state") != "open" or author.lower() == user.lower():
+                continue
+            if (src.get("pull_request") or {}).get("merged_at") or src.get("draft"):
+                continue
+            prs_here.append((_repo_from(src) or repo, src, author))
+        for pr_repo, src, author in prs_here:
+            key = f"{pr_repo}#{src['number']}"
+            if key in found:
+                continue
+            try:
+                reviews = gh.pr_reviews(pr_repo, src["number"])
+            except GitHubError as err:
+                errors.append(f"{key} reviews: {err}")
+                continue
+            if any((r.get("user") or {}).get("login", "").lower() == user.lower() for r in reviews):
+                continue
+            found[key] = Item(key, src.get("html_url", ""), src.get("title", ""),
+                              f"by {author} · linked to {ref} ({role})")
+        if connected and not any_pr_ref:      # linked by hand, and GitHub didn't say which PR
+            key = f"{repo}#{thread['number']}:linked"
+            found.setdefault(key, Item(key, thread["html_url"], thread["title"],
+                                       f"a PR was linked to this issue ({role}); open the issue to find it"))
+    return found
+
+
 def describe_events(events, user, since):
     """Short phrases for events by other humans after `since`, collapsed per person and kind."""
     phrases = []
@@ -185,11 +260,21 @@ def build_digest(gh, cfg, state, now):
         requested = None
 
     queue = unreviewed_prs(gh, cfg, now, prs, set(seen.get("review_queue", [])), errors)
+    follow = followups(gh, cfg, now, errors)
+    for key in list(follow):
+        if key in (requested or {}):
+            del follow[key]                    # already reported as a review request
 
     for key, pr in (requested or {}).items():
         if first_run or key not in seen.get("review_requested", []):
             digest.needs_you.append(Item(key, pr["html_url"], pr["title"],
                                          f"review requested by {pr['user']['login']}"))
+
+    new_follow = [item for key, item in sorted(follow.items())
+                  if first_run or key not in seen.get("followups", [])]
+    for item in new_follow:
+        item.detail = "PR opened on a thread you're in, " + item.detail
+    digest.needs_you.extend(new_follow)
 
     if first_run:
         digest.baseline = True
@@ -211,6 +296,8 @@ def build_digest(gh, cfg, state, now):
     digest.board_quiet = [_cand_item(c, "quiet") for c in by_recent(quiet.values())]
     digest.board_queue = sorted((_queue_item(key, label, pr, now) for key, (repo, label, pr) in queue.items()),
                                 key=lambda i: i.key)
+    digest.board_followups = [Item(i.key, i.url, i.title, i.detail.replace("PR opened on a thread you're in, ", ""))
+                              for _, i in sorted(follow.items())]
 
     def merged(name, current):
         # After a partial scan, keep old entries so they don't re-alert tomorrow.
@@ -225,6 +312,7 @@ def build_digest(gh, cfg, state, now):
             "review_requested": (sorted(requested) if requested is not None
                                  else seen.get("review_requested", [])),
             "review_queue": merged("review_queue", queue),
+            "followups": merged("followups", follow),
         },
     }
     return digest, new_state

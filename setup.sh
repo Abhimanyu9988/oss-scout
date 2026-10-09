@@ -90,7 +90,23 @@ if ! gh auth status >/dev/null 2>&1; then
   gh auth login --hostname github.com --git-protocol https --web --scopes workflow || fail "Sign-in didn't finish."
 fi
 HAVE="$(gh api user --jq .login 2>/dev/null || true)"
-if [ "$(printf '%s' "$HAVE" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$WANT" | tr '[:upper:]' '[:lower:]')" ]; then
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+if [ -n "$HAVE" ] && [ "$(lower "$HAVE")" != "$(lower "$WANT")" ] \
+   && ask "scout.config.json is set up for $WANT. Set this copy up for you, $HAVE, instead?"; then
+  python3 - "$CONFIG" "$HAVE" <<'PY'
+import json, sys
+path, user = sys.argv[1], sys.argv[2]
+cfg = json.load(open(path))
+cfg["github_user"] = user
+cfg.pop("board_repo", None)
+with open(path, "w") as fh:
+    json.dump(cfg, fh, indent=2)
+    fh.write("\n")
+PY
+  WANT="$HAVE"
+  ok "Config now uses $HAVE. Edit the repos and labels in scout.config.json whenever you like."
+fi
+if [ "$(lower "$HAVE")" != "$(lower "$WANT")" ]; then
   warn "gh is signed in as '${HAVE:-nobody}', but scout.config.json says '$WANT'."
   info "The repo and the daily job belong to that account, so sign in as $WANT."
   if ask "Sign in again as $WANT now?"; then
@@ -115,6 +131,11 @@ gh auth setup-git >/dev/null 2>&1 && ok "git will use this account when pushing"
 REPO=""
 if git rev-parse --git-dir >/dev/null 2>&1 && git remote get-url origin >/dev/null 2>&1; then
   REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+  if [ -n "$REPO" ] && [ "$(lower "${REPO%%/*}")" != "$(lower "$HAVE")" ]; then
+    info "This folder is a clone of $REPO. Setup will create your own copy; the original is kept as 'upstream'."
+    git remote rename origin upstream 2>/dev/null || git remote remove origin
+    REPO=""
+  fi
 fi
 
 push_changes() {   # push_changes "commit message"

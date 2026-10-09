@@ -130,12 +130,12 @@ class DigestTest(unittest.TestCase):
         self.assertEqual([i.key for i in digest.to_pick], [f"{REPO}#51856"])
         self.assertEqual([i.key for i in digest.needs_you], [f"{REPO}#51999"])
         self.assertEqual(digest.review_queue, [])
-        self.assertFalse(any("involves:" in q for q in gh.queries))
+        self.assertFalse(any("involves:" in q and "is:issue is:open" not in q for q in gh.queries))
         self.assertEqual(state["seen"]["quiet"], [f"{REPO}#47988"])
         self.assertEqual(state["seen"]["review_queue"], [f"{REPO}#51224", f"{REPO}#51700"])
         self.assertEqual(sorted(gh.review_calls), [51224, 51300, 51700])
         self.assertFalse(any("review:none" in q for q in gh.queries))
-        self.assertEqual(len(gh.queries), 1)  # only the review-requested search on a first run
+        self.assertEqual(len(gh.queries), 2)  # review requests + thread follow-ups on a first run
 
     def test_reported_prs_are_not_rechecked(self):
         _, state = build_digest(world(), CFG, {}, NOW)
@@ -172,6 +172,63 @@ class TagTest(unittest.TestCase):
         a.reason = b.reason = ""
         self.assertEqual(_cand_item(a, "free").detail, "free")
         self.assertEqual(_cand_item(b, "free").detail, "[processor/k8sattributes] free")
+
+
+def thread_world(pr_state="open", reviewed=False, body="Happy to review the PR either way."):
+    gh = world()
+    issue_51856 = issue(51856, "[receiver/k8scluster] migrate semconv", ["receiver/k8scluster"], author="ThyTran1402")
+    linked_pr = {"number": 51874, "state": pr_state, "title": "[chore][receiver/k8scluster] migrated semconv",
+                 "html_url": f"https://github.com/{REPO}/pull/51874", "user": {"login": "ThyTran1402"},
+                 "repository": {"full_name": REPO}, "pull_request": {"merged_at": None}}
+    gh.timelines[51856] = [
+        comment(USER, body, "2026-10-06T10:00:00Z"),
+        {"event": "cross-referenced", "created_at": "2026-10-07T04:00:00Z", "actor": {"login": "ThyTran1402"},
+         "source": {"issue": linked_pr}},
+        {"event": "connected", "created_at": "2026-10-07T04:00:00Z", "actor": {"login": "ThyTran1402"}},
+    ]
+    gh.searches.insert(0, ("is:issue is:open", [issue_51856]))
+    if reviewed:
+        gh.reviews[51874] = [{"user": {"login": USER}, "state": "COMMENTED"}]
+    return gh
+
+
+class FollowupTest(unittest.TestCase):
+    def test_pr_linked_to_a_thread_you_offered_to_review(self):
+        _, state = build_digest(world(), CFG, {}, NOW)
+        state["last_run"] = "2026-10-06T07:00:00Z"
+        digest, new_state = build_digest(thread_world(), CFG, state, NOW)
+        hit = [i for i in digest.needs_you if i.key.endswith("#51874")]
+        self.assertEqual(len(hit), 1)
+        self.assertEqual(hit[0].url, f"https://github.com/{REPO}/pull/51874")
+        self.assertEqual(hit[0].detail, "PR opened on a thread you're in, by ThyTran1402 · linked to #51856 "
+                                        "(you offered to review)")
+        self.assertEqual([i.key for i in digest.board_followups], [f"{REPO}#51874"])
+        self.assertIn(f"{REPO}#51874", new_state["seen"]["followups"])
+
+        again, _ = build_digest(thread_world(), CFG, new_state, NOW)      # reported once...
+        self.assertFalse(any(i.key.endswith("#51874") for i in again.needs_you))
+        self.assertEqual(len(again.board_followups), 1)                   # ...but stays on the board
+
+    def test_disappears_once_reviewed_or_closed(self):
+        for gh in (thread_world(reviewed=True), thread_world(pr_state="closed")):
+            digest, _ = build_digest(gh, CFG, {}, NOW)
+            self.assertEqual(digest.board_followups, [])
+
+    def test_linked_by_hand_without_a_pr_reference(self):
+        gh = thread_world()
+        gh.timelines[51856] = [e for e in gh.timelines[51856] if e["event"] != "cross-referenced"]
+        digest, _ = build_digest(gh, CFG, {}, NOW)
+        self.assertEqual(len(digest.board_followups), 1)
+        self.assertIn("a PR was linked to this issue", digest.board_followups[0].detail)
+        self.assertTrue(digest.board_followups[0].url.endswith("/issues/51856"))
+
+    def test_plain_comment_and_board_section(self):
+        from scout import board
+        digest, _ = build_digest(thread_world(body="Interesting, the schema URL matters here."), CFG, {}, NOW)
+        self.assertIn("(you commented)", digest.board_followups[0].detail)
+        text = board.render_board(digest, CFG, NOW, "Abhimanyu9988/oss-scout")
+        self.assertIn("### PRs to review on threads you're in (1)", text)
+        self.assertLess(text.index("PRs to review on threads"), text.index("Free to pick up"))
 
 
 class SlackTest(unittest.TestCase):
