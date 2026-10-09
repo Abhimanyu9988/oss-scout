@@ -2,6 +2,26 @@
 
 [Getting started](getting-started.md) · [The board](board.md) · [Contribution log](contribution-log.md) · [Private portfolio](portfolio.md) · [Changing things](changing-things.md) · [Troubleshooting](troubleshooting.md) · [Contributor's playbook](playbook.md)
 
+## In the browser
+
+1. Click **Use this template → Create a new repository** on
+   [Abhimanyu9988/oss-scout](https://github.com/Abhimanyu9988/oss-scout). Make it public, so the Actions minutes
+   are free.
+2. In your copy, open `scout.config.json`, click the pencil icon, and choose what to watch:
+   - `repos`: repositories, each with the labels you care about (or no labels for the whole repository);
+   - `discover.orgs`: organisations to look across for `good first issue` and `help wanted` issues.
+
+   Your GitHub handle and repository are picked up automatically, so you don't need to change `github_user` or
+   `board_repo`.
+3. Go to **Actions**, enable workflows if asked, open **Daily digest**, and click **Run workflow**.
+
+The first run creates your board and posts a "watching from today" comment. Watch the repository, or install the
+GitHub mobile app, to get the comments as notifications.
+
+## From a terminal
+
+The terminal setup does the same, and can also add the contribution log to your profile and the private portfolio.
+
 You need a Mac or Linux machine with Python 3.9+, git and the [GitHub CLI](https://cli.github.com/). Setup offers to
 install whatever is missing with Homebrew.
 

@@ -361,6 +361,11 @@ else
 fi
 
 if [ "$(gh repo view "$REPO" --json visibility --jq .visibility 2>/dev/null)" = "PUBLIC" ]; then
+  if [ "$(gh repo view "$REPO" --json isTemplate --jq .isTemplate 2>/dev/null)" != "true" ]; then
+    info "Making it a template adds a \"Use this template\" button, so others can set up their own"
+    info "copy in the browser without a terminal."
+    ask "Make $REPO a template?" && gh repo edit "$REPO" --template >/dev/null && ok "It's a template now"
+  fi
   VERSION="v$(python3 -c 'import scout; print(scout.__version__)')"
   if ! git ls-remote --tags origin "$VERSION" 2>/dev/null | grep -q .; then
     info "Tagging this version lets other people pin it, so later changes can't surprise them."
@@ -403,7 +408,7 @@ elif ask "Set it up?"; then
       --description "My GitHub profile" >/dev/null || fail "Couldn't create $PROFILE."
     ok "Created https://github.com/$PROFILE"
   fi
-  ORGS_DEFAULT="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); print(" ".join(sorted({r["repo"].split("/")[0] for r in c["repos"]})))' "$CONFIG")"
+  ORGS_DEFAULT="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); print(" ".join(sorted({r["repo"].split("/")[0] for r in c["repos"]} | set((c.get("discover") or {}).get("orgs", [])))))' "$CONFIG")"
   ORGS="$(prompt "GitHub organisations to log (space-separated)" "$ORGS_DEFAULT")"
 
   WORK="$(mktemp -d)"

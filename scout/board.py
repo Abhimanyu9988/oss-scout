@@ -49,19 +49,29 @@ def _section(heading, items, limit=None, empty="Nothing right now."):
 def render_board(digest, cfg, now, home_repo=None):
     tool = f"[oss-scout](https://github.com/{home_repo})" if home_repo else "oss-scout"
     repos = ", ".join(r["repo"] for r in cfg["repos"])
-    areas = ", ".join(sorted({lbl for r in cfg["repos"] for lbl in r.get("labels", [])}))
-    lines = [
-        f"Updated {now.strftime('%a %d %b %Y, %H:%M')} UTC · watching {safe(repos)}",
-        "",
-        f"Areas: {safe(areas)}",
-        "",
-    ]
+    areas = ", ".join(sorted({lbl for r in cfg["repos"] for lbl in (r.get("labels") or ["everything"])}))
+    d = cfg.get("discover") or {}
+    lines = [f"Updated {now.strftime('%a %d %b %Y, %H:%M')} UTC · watching {safe(repos)}", "",
+             f"Areas: {safe(areas)}", ""]
+    if d.get("orgs"):
+        labels = " or ".join(f"`{x}`" for x in (d.get("labels") or ["good first issue", "help wanted"]))
+        lines += [f"Also looking across {safe(', '.join(d['orgs']))} for issues labelled {labels}.", ""]
+    lines += ["## Needs you", ""]
     lines += _section("PRs to review on threads you're in", digest.board_followups,
                       empty="Nothing waiting for you.")
-    lines += _section("Free to pick up", digest.board_free,
+    lines += _section(f"Your PRs with no review after {cfg.get('ping_after_days', 7)}+ days", digest.board_my_waiting,
+                      empty="None. The CNCF contributor FAQ suggests a polite ping after about a week.")
+    lines += _section(f"Issues you claimed {cfg.get('claim_reminder_days', 14)}+ days ago with no PR",
+                      digest.board_my_claims, empty="None.")
+    lines += ["## To pick up", ""]
+    lines += _section("Free in your areas", digest.board_free,
                       empty="No unclaimed issues in these areas today.")
-    lines += _section(f"Claimed but quiet for {cfg.get('quiet_days', 45)}+ days", digest.board_quiet)
-    lines += _section(f"PRs waiting {cfg.get('stale_review_days', 7)}+ days for a first review",
+    if d.get("orgs"):
+        lines += _section(f"Free across {', '.join(d['orgs'])}", digest.board_discovered,
+                          empty="Nothing new and unclaimed right now.")
+    lines += _section(f"Claimed by someone else but quiet for {cfg.get('quiet_days', 45)}+ days", digest.board_quiet)
+    lines += ["## To review", ""]
+    lines += _section(f"PRs in your areas waiting {cfg.get('stale_review_days', 7)}+ days for a first review",
                       digest.board_queue)
     lines += [
         "---",
@@ -83,7 +93,9 @@ def render_comment(digest, cfg, now):
             "**Watching from today.** From now on you'll get a comment here only when something changes.",
             "",
             f"{c.get('free', 0)} free · {c.get('quiet', 0)} claimed but quiet · "
-            f"{c.get('blocked', 0)} blocked · {c.get('taken', 0)} taken. The full lists are in the issue above.",
+            f"{c.get('blocked', 0)} blocked · {c.get('taken', 0)} taken"
+            + (f" · {c['discovered']} free across your organisations" if "discovered" in c else "")
+            + ". The full lists are in the issue above.",
             "",
         ]
     if digest.needs_you:
@@ -91,6 +103,8 @@ def render_comment(digest, cfg, now):
     if digest.to_pick:
         heading = "Most recent free issues" if digest.baseline else "New to pick up"
         lines += _section(heading, digest.to_pick, MAX_COMMENT_LINES)
+    if digest.discovered:
+        lines += _section("New across your organisations", digest.discovered, 5)
     if digest.review_queue:
         lines += _section("Newly waiting for a first review", digest.review_queue, MAX_COMMENT_LINES)
     if digest.errors:

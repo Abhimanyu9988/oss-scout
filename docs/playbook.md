@@ -2,7 +2,9 @@
 
 [Getting started](getting-started.md) · [The board](board.md) · [Contribution log](contribution-log.md) · [Private portfolio](portfolio.md) · [Changing things](changing-things.md) · [Troubleshooting](troubleshooting.md) · [Contributor's playbook](playbook.md)
 
-Lessons from a first month of contributing to OpenTelemetry. They apply to most large open-source projects.
+Start with the [CNCF contributor FAQ](https://contribute.cncf.io/contributors/faq/): how to choose a project, claim
+an issue, open a PR, handle feedback and find mentoring. This page adds lessons from a first month of contributing to
+OpenTelemetry that the FAQ doesn't cover.
 
 ## Before you write any code
 

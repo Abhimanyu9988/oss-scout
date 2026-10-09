@@ -55,6 +55,8 @@ def main(argv=None, gh=None, now=None, writer=None):
 
     cfg = load_config(args.config)
 
+    adopt_fresh_copy(cfg)
+
     if args.cmd == "report":
         errors = []
         cands = scan_candidates(gh, cfg, now, errors)
@@ -66,7 +68,7 @@ def main(argv=None, gh=None, now=None, writer=None):
     state = load_state(args.state)
     digest, new_state = build_digest(gh, cfg, state, now)
 
-    if digest.errors and not digest.counts:
+    if digest.errors and not any(digest.counts.values()):
         # Nothing could be read at all (bad token, network, rate limit). Don't post and
         # don't save, or tomorrow's run would report every issue as new.
         for err in digest.errors[:5]:
@@ -87,7 +89,7 @@ def main(argv=None, gh=None, now=None, writer=None):
     if unknown:
         print(f"error: unknown deliver target(s) {unknown}; use 'github' and/or 'slack'", file=sys.stderr)
         return 2
-    count = len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue)
+    count = len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue) + len(digest.discovered)
 
     if args.dry_run:
         print(text if not quiet_day else "Nothing new today.")
@@ -132,6 +134,22 @@ def main(argv=None, gh=None, now=None, writer=None):
     if len(digest.errors) > 3:
         print(f"error: ...and {len(digest.errors) - 3} more", file=sys.stderr)
     return 0
+
+
+def adopt_fresh_copy(cfg):
+    """A copy made with "Use this template" still carries its author's config. When it runs in
+    a repository owned by someone else, use that owner and repository instead."""
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return False
+    here = os.environ.get("GITHUB_REPOSITORY", "")
+    owner = os.environ.get("GITHUB_REPOSITORY_OWNER") or here.split("/")[0]
+    configured = cfg.get("board_repo") or here
+    if not here or not owner or configured.split("/")[0].lower() == owner.lower():
+        return False
+    print(f"note: this copy belongs to {owner}; using github_user={owner} and board_repo={here}. "
+          "Edit scout.config.json to choose your own projects.")
+    cfg["github_user"], cfg["board_repo"] = owner, here
+    return True
 
 
 def run_portfolio(args):

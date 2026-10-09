@@ -5,7 +5,9 @@
   "stale_review_days": 7,
   "max_issues_per_label": 60,
   "post_when_empty": false,
-  "deliver": ["github"],
+  "deliver": [
+    "github"
+  ],
   "board_repo": "Abhimanyu9988/oss-scout",
   "repos": [
     {
@@ -21,5 +23,20 @@
         "receiver/sqlserver"
       ]
     }
-  ]
+  ],
+  "discover": {
+    "orgs": [
+      "open-telemetry",
+      "kubernetes",
+      "kubernetes-sigs"
+    ],
+    "labels": [
+      "good first issue",
+      "help wanted"
+    ],
+    "max_age_days": 90,
+    "limit": 30
+  },
+  "ping_after_days": 7,
+  "claim_reminder_days": 14
 }

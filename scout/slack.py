@@ -43,12 +43,14 @@ def build_payload(digest, title, date_label):
     if digest.to_pick:
         heading = "Most recent free issues" if digest.baseline else "New to pick up"
         blocks.append(_section(heading, digest.to_pick))
+    if digest.discovered:
+        blocks.append(_section("New across your organisations", digest.discovered))
     if digest.review_queue:
         blocks.append(_section("Waiting for a first review", digest.review_queue))
     if digest.errors:
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": esc(
             f"Partial scan, {len(digest.errors)} error(s). First: {digest.errors[0][:200]}")}]})
-    total = len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue)
+    total = len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue) + len(digest.discovered)
     fallback = f"{title}: {total} item(s) need a look"
     return {"text": fallback, "blocks": blocks}
 

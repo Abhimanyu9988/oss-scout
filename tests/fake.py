@@ -78,7 +78,7 @@ class FakeGitHub:
     def timeline(self, repo, number, max_pages=5):
         return self.timelines.get(number, [])
 
-    def search_issues(self, query, limit=100):
+    def search_issues(self, query, limit=100, sort=None):
         self.queries.append(query)
         for needle, results in self.searches:
             if needle in query:

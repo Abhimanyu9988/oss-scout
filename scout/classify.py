@@ -19,6 +19,7 @@ CLAIM_RE = re.compile(
     r"|i have (opened|raised|submitted) a pr",
     re.IGNORECASE,
 )
+ASSIGN_RE = re.compile(r"^\s*/assign\b", re.MULTILINE)   # Kubernetes (Prow) claim command
 BOT_RE = re.compile(r"\[bot\]$|^github-actions|bot$|dashboard", re.IGNORECASE)
 
 DEFAULT_BLOCKING_LABELS = (
@@ -111,7 +112,8 @@ def classify(cand, timeline, *, user, now, quiet_days=45, blocking_labels=DEFAUL
             login = actor_of(ev)
             if is_bot(login):
                 continue
-            if CLAIM_RE.search(ev.get("body") or "") and ev.get("created_at"):
+            body = ev.get("body") or ""
+            if (CLAIM_RE.search(body) or ASSIGN_RE.search(body)) and ev.get("created_at"):
                 claim = (login, ev["created_at"])
 
     notes = []

@@ -2,34 +2,34 @@
 
 [Getting started](getting-started.md) · [The board](board.md) · [Contribution log](contribution-log.md) · [Private portfolio](portfolio.md) · [Changing things](changing-things.md) · [Troubleshooting](troubleshooting.md) · [Contributor's playbook](playbook.md)
 
-Tells you which open-source issues and pull requests need you, and stays quiet when
-nothing changed.
+One issue in your own repository, rebuilt every run. Sections:
 
-You list the repositories and labels you care about. Every weekday morning it scans
-them and keeps a **Contribution board** issue in your own copy of this repo up to date:
+**Needs you**
 
-- **PRs to review on threads you're in:** someone opened a PR linked to an issue you
-  opened or commented on, and you haven't reviewed it yet. If you said you'd review it,
-  the item says so. It stays on the board until you review it or the PR closes.
-- **Free to pick up:** no PR, no claim comment, no blocking label.
-- **Claimed but quiet:** someone said they'd take it 45+ days ago and never opened a PR.
-- **PRs waiting for a first review:** open for 7+ days, and nobody has reviewed them yet.
-  Reviewing these is the fastest way to become useful to a project's maintainers.
+- **PRs to review on threads you're in:** someone opened a PR linked to an issue you opened or commented on, and you
+  haven't reviewed it. Drafts are included and marked. If you said you'd review it, the item says so. It stays until
+  you review it or the PR closes.
+- **Your PRs with no review after 7+ days:** the [CNCF contributor FAQ](https://contribute.cncf.io/contributors/faq/)
+  suggests expecting 2 to 7 days, then a polite ping on the PR or in the project's channel.
+- **Issues you claimed 14+ days ago with no PR:** post an update, or say you can't get to it so someone else can
+  (the FAQ's advice too).
 
-When something changes, it adds a comment to the board that mentions you, so it reaches
-the GitHub app and your email:
+**To pick up**
 
-- **Needs you:** a review was requested from you; a PR was opened on a thread you're in;
-  or someone commented, reviewed, merged or closed an issue or PR you're involved in.
-- **New to pick up:** an issue just became free, or a claim just went quiet.
-- **Newly waiting for a first review.**
+- **Free in your areas:** open, unassigned issues under the repos and labels you watch, with no linked PR, no claim
+  comment and no blocking label.
+- **Free across your organisations:** issues labelled `good first issue` or `help wanted` anywhere in the
+  organisations you list under `discover`, from the last 90 days, put through the same checks.
+- **Claimed by someone else but quiet for 45+ days:** fair to ask, politely, whether you can take over.
 
-On most days that's zero to three lines. When nothing changed, there's no comment.
-Slack is optional, as a second place to receive the same digest.
+**To review**
 
-It reads public data only. The single thing it writes is that board issue, in your own
-repo. It never comments on, claims, reviews or opens anything upstream. What you say on
-an issue is up to you, in your own words.
+- **PRs in your areas waiting 7+ days for a first review.** Reviewing these is the fastest way to become useful to
+  a project's maintainers.
+
+When something changes, a comment on the board mentions you, so it reaches the GitHub app and your email. It covers
+what's new in the sections above, plus comments, reviews, merges and closes on anything you're involved in. Each item
+is announced once; quiet days get no comment.
 
 ## How it decides an issue is free
 
@@ -38,7 +38,7 @@ unassigned issue and looks for three things:
 
 1. **Cross-referenced PRs,** including ones in other repos (such as a semantic-conventions
    PR), and manually linked PRs.
-2. **Claim comments** like "I'd like to work on this" or "happy to pick it up". The newest
+2. **Claim comments** like "I'd like to work on this" or "happy to pick it up", and Kubernetes' `/assign`. The newest
    claim decides the bucket:
    - recent means *taken*
    - 45+ days with no PR means *claimed but quiet*
@@ -62,6 +62,25 @@ Others can also copy the repo and point it at their own areas.
 
 ## Settings
 
+To watch a whole repository rather than some of its labels, leave `labels` out:
+`{"repo": "open-telemetry/opentelemetry-cpp"}`.
+
+To look across whole organisations, add a `discover` block:
+
+```json
+"discover": {
+  "orgs": ["open-telemetry", "kubernetes", "kubernetes-sigs"],
+  "labels": ["good first issue", "help wanted"],
+  "languages": ["go"],
+  "max_age_days": 90,
+  "limit": 30
+}
+```
+
+`languages` is optional and filters by the repository's main language. Each run re-checks only issues that changed
+since the last one, so this stays within GitHub's rate limits.
+
+
 | Key | Default | Meaning |
 |---|---|---|
 | `github_user` | required | Your GitHub handle, used for review requests, your activity and your claims |
@@ -73,6 +92,8 @@ Others can also copy the repo and point it at their own areas.
 | `followup_days` | 60 | How far back to look for issues you're involved in |
 | `followup_threads` | 40 | Cap on those issues checked per run |
 | `max_issues_per_label` | 60 | Cap on issues read per label |
+| `ping_after_days` | 7 | When your own unreviewed PR shows up under Needs you |
+| `claim_reminder_days` | 14 | When an issue you claimed without a PR shows up |
 | `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
 | `post_when_empty` | false | Comment even on days with nothing new |
 | `title` | Contribution scout | Header of the Slack message |

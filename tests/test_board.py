@@ -29,9 +29,9 @@ class RenderTest(unittest.TestCase):
     def test_board_lists_everything_politely(self):
         digest, _ = baseline()
         body = board.render_board(digest, CFG, NOW, HOME)
-        self.assertIn("### Free to pick up (1)", body)
-        self.assertIn("### Claimed but quiet for 45+ days (1)", body)
-        self.assertIn("### PRs waiting 7+ days for a first review (2)", body)
+        self.assertIn("### Free in your areas (1)", body)
+        self.assertIn("### Claimed by someone else but quiet for 45+ days (1)", body)
+        self.assertIn("### PRs in your areas waiting 7+ days for a first review (2)", body)
         self.assertIn("https://redirect.github.com/open-telemetry/opentelemetry-collector-contrib/issues/51856", body)
         self.assertNotIn("](https://github.com/open-telemetry", body)   # no backlink-creating links
         self.assertNotRegex(body, r"(?<![\w/])#\d")                       # no bare #N autolinks
@@ -116,6 +116,24 @@ class CliDeliveryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FreshCopyTest(unittest.TestCase):
+    def test_template_copy_adopts_its_owner(self):
+        from scout.cli import adopt_fresh_copy
+        env = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": "janedoe/oss-scout", "GITHUB_REPOSITORY_OWNER": "janedoe"}
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            cfg = dict(CFG, board_repo="Abhimanyu9988/oss-scout")
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertTrue(adopt_fresh_copy(cfg))
+            self.assertEqual((cfg["github_user"], cfg["board_repo"]), ("janedoe", "janedoe/oss-scout"))
+            same_owner = dict(CFG, board_repo="janedoe/oss-scout-old")
+            self.assertFalse(adopt_fresh_copy(same_owner))        # same owner, other repo: the old-copy error stays
+        finally:
+            for k, v in old.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
 class WrongRepoTest(unittest.TestCase):

@@ -134,8 +134,8 @@ class DigestTest(unittest.TestCase):
         self.assertEqual(state["seen"]["quiet"], [f"{REPO}#47988"])
         self.assertEqual(state["seen"]["review_queue"], [f"{REPO}#51224", f"{REPO}#51700"])
         self.assertEqual(sorted(gh.review_calls), [51224, 51300, 51700])
-        self.assertFalse(any("review:none" in q for q in gh.queries))
-        self.assertEqual(len(gh.queries), 2)  # review requests + thread follow-ups on a first run
+        self.assertFalse(any("review:none label:" in q for q in gh.queries))     # no per-label searches
+        self.assertEqual(len(gh.queries), 3)  # review requests, thread follow-ups, your waiting PRs
 
     def test_reported_prs_are_not_rechecked(self):
         _, state = build_digest(world(), CFG, {}, NOW)
@@ -209,6 +209,13 @@ class FollowupTest(unittest.TestCase):
         self.assertFalse(any(i.key.endswith("#51874") for i in again.needs_you))
         self.assertEqual(len(again.board_followups), 1)                   # ...but stays on the board
 
+    def test_draft_prs_still_show(self):
+        gh = thread_world()
+        gh.timelines[51856][1]["source"]["issue"]["draft"] = True
+        digest, _ = build_digest(gh, CFG, {}, NOW)
+        self.assertEqual(len(digest.board_followups), 1)
+        self.assertIn("by ThyTran1402 · draft · linked to #51856", digest.board_followups[0].detail)
+
     def test_disappears_once_reviewed_or_closed(self):
         for gh in (thread_world(reviewed=True), thread_world(pr_state="closed")):
             digest, _ = build_digest(gh, CFG, {}, NOW)
@@ -228,7 +235,99 @@ class FollowupTest(unittest.TestCase):
         self.assertIn("(you commented)", digest.board_followups[0].detail)
         text = board.render_board(digest, CFG, NOW, "Abhimanyu9988/oss-scout")
         self.assertIn("### PRs to review on threads you're in (1)", text)
-        self.assertLess(text.index("PRs to review on threads"), text.index("Free to pick up"))
+        self.assertLess(text.index("PRs to review on threads"), text.index("Free in your areas"))
+
+
+class DiscoveryTest(unittest.TestCase):
+    D = dict(CFG, discover={"orgs": ["open-telemetry", "kubernetes"], "labels": ["good first issue"], "limit": 10})
+
+    def world(self):
+        gh = world()
+        k8s = "kubernetes/kubectl"
+        def item(n, repo, created, updated=None):
+            return {"number": n, "title": f"issue {n}", "html_url": f"https://github.com/{repo}/issues/{n}",
+                    "labels": [{"name": "good first issue"}], "updated_at": updated or created, "created_at": created,
+                    "user": {"login": "x"}, "repository_url": f"https://api.github.com/repos/{repo}"}
+        gh.searches.insert(0, ('label:"good first issue"', [
+            item(1700, k8s, "2026-10-05T00:00:00Z"),
+            item(1701, k8s, "2026-10-06T00:00:00Z"),
+            item(4681, "open-telemetry/opentelemetry-cpp", "2026-10-04T00:00:00Z"),
+            item(51856, REPO, "2026-10-01T00:00:00Z"),          # already on the board via a watched label
+        ]))
+        gh.timelines[1701] = [comment("someone", "/assign", "2026-10-06T10:00:00Z")]   # Kubernetes-style claim
+        return gh
+
+    def test_discovers_free_issues_across_orgs(self):
+        gh = self.world()
+        digest, state = build_digest(gh, self.D, {}, NOW)
+        self.assertEqual([i.key for i in digest.board_discovered],
+                         ["kubernetes/kubectl#1700", "open-telemetry/opentelemetry-cpp#4681"])
+        self.assertEqual(digest.board_discovered[1].detail, "[opentelemetry-cpp] good first issue · opened 3d ago")
+        q = next(q for q in gh.queries if "good first issue" in q)
+        self.assertIn("org:open-telemetry org:kubernetes", q)
+        self.assertIn("-linked:pr", q)
+        self.assertIn("no:assignee", q)
+        self.assertEqual(state["discover_cache"]["kubernetes/kubectl#1701"]["bucket"], "taken")
+        self.assertEqual(digest.counts["discovered"], 2)
+        self.assertEqual(digest.discovered, [])                  # first run: baseline, nothing announced
+
+    def test_cache_skips_unchanged_issues_and_new_ones_are_announced(self):
+        _, state = build_digest(self.world(), self.D, {}, NOW)
+        state["last_run"] = "2026-10-06T07:00:00Z"
+        state["seen"]["discovered"] = ["kubernetes/kubectl#1700"]
+        gh = self.world()
+        calls = []
+        orig = gh.timeline
+        gh.timeline = lambda repo, n, max_pages=5: (calls.append(n), orig(repo, n))[1]
+        digest, _ = build_digest(gh, self.D, state, NOW)
+        self.assertNotIn(1700, calls)
+        self.assertNotIn(4681, calls)
+        self.assertEqual([i.key for i in digest.discovered], ["open-telemetry/opentelemetry-cpp#4681"])
+
+    def test_scope_includes_orgs_for_your_threads(self):
+        gh = self.world()
+        build_digest(gh, self.D, {}, NOW)
+        q = next(q for q in gh.queries if "involves:" in q)
+        self.assertIn("org:open-telemetry org:kubernetes", q)
+        self.assertNotIn("repo:open-telemetry/", q)               # covered by the org already
+
+
+class RepoWithoutLabelsTest(unittest.TestCase):
+    def test_watches_whole_repo(self):
+        gh = world()
+        gh.issues_by_label[None] = [issue(4681, "C++ thing", ["good first issue"])]
+        c = dict(CFG, repos=[{"repo": "open-telemetry/opentelemetry-cpp"}])
+        digest, _ = build_digest(gh, c, {}, NOW)
+        self.assertEqual([(i.key.split("#")[1], i.detail) for i in digest.board_free],
+                         [("4681", "[opentelemetry-cpp] free")])
+
+
+class EtiquetteTest(unittest.TestCase):
+    def test_your_waiting_prs_and_stale_claims(self):
+        gh = thread_world()
+        mine = pr(4158, "Pod memory metrics", USER, created="2026-09-28T00:00:00Z")
+        mine["repository_url"] = "https://api.github.com/repos/open-telemetry/semantic-conventions"
+        gh.searches.insert(0, ("review:none author:", [mine]))
+        claimed = issue(49927, "API server node proxy", ["receiver/kubeletstats"], author="francois07")
+        gh.searches.insert(0, ("is:issue is:open", [claimed]))
+        gh.timelines[49927] = [comment(USER, "I'd like to work on this", "2026-09-10T00:00:00Z")]
+        digest, _ = build_digest(gh, CFG, {}, NOW)
+        self.assertEqual([i.key for i in digest.board_my_waiting], ["open-telemetry/semantic-conventions#4158"])
+        self.assertIn("open 9d with no review: a polite ping", digest.board_my_waiting[0].detail)
+        self.assertEqual([i.key for i in digest.board_my_claims], [f"{REPO}#49927"])
+        self.assertIn("you said you'd take it 27d ago", digest.board_my_claims[0].detail)
+        self.assertTrue(any(i.key.endswith("#4158") for i in digest.needs_you))
+
+    def test_claim_with_your_pr_is_not_nagged(self):
+        gh = thread_world()
+        claimed = issue(49927, "x", [], author="francois07")
+        gh.searches.insert(0, ("is:issue is:open", [claimed]))
+        my_pr = {"number": 60000, "state": "open", "user": {"login": USER}, "repository": {"full_name": REPO},
+                 "pull_request": {"merged_at": None}, "html_url": "u", "title": "t"}
+        gh.timelines[49927] = [comment(USER, "/assign", "2026-09-01T00:00:00Z"),
+                               {"event": "cross-referenced", "created_at": "2026-09-02T00:00:00Z", "source": {"issue": my_pr}}]
+        digest, _ = build_digest(gh, CFG, {}, NOW)
+        self.assertEqual(digest.board_my_claims, [])
 
 
 class SlackTest(unittest.TestCase):

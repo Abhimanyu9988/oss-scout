@@ -97,8 +97,9 @@ class GitHub:
         """Open items carrying `label`, newest activity first, split into
         (unassigned issues, pull requests). One listing serves both, which keeps
         the run off the search API and its strict secondary rate limits."""
-        params = {"labels": label, "state": "open", "sort": "updated",
-                  "direction": "desc", "per_page": 100}
+        params = {"state": "open", "sort": "updated", "direction": "desc", "per_page": 100}
+        if label:
+            params["labels"] = label
         issues, prs = [], []
         for page in self._pages(f"/repos/{repo}/issues", params, max_pages=3):
             for item in page:
@@ -177,14 +178,17 @@ class GitHub:
             events.extend(page)
         return events
 
-    def search_issues(self, query, limit=100):
+    def search_issues(self, query, limit=100, sort=None):
         """Issue/PR search. Paced to stay under the 30 requests/minute search limit."""
         gap = self._search_interval - (time.monotonic() - self._last_search)
         if gap > 0:
             self._sleep(gap)
         self._last_search = time.monotonic()
         items = []
-        for page in self._pages("/search/issues", {"q": query, "per_page": 100}, max_pages=2):
+        params = {"q": query, "per_page": 100}
+        if sort:
+            params.update(sort=sort, order="desc")
+        for page in self._pages("/search/issues", params, max_pages=2):
             items.extend(page.get("items", []))
             if len(items) >= limit:
                 break
