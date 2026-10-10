@@ -175,7 +175,7 @@ class RenderTest(unittest.TestCase):
     def test_section(self):
         text = contrib_log.render_section(self.records(), CFG)
         self.assertTrue(text.startswith(contrib_log.START) and text.rstrip().endswith(contrib_log.END))
-        self.assertIn("**2 merged PRs** · 1 open · **1 PR reviewed** · 1 comment on others' issues and PRs · 1 issue opened", text)
+        self.assertIn("**2 merged PRs** · 1 in review · **1 PR reviewed** · 1 comment on others' issues and PRs · 1 issue opened", text)
         self.assertIn("Active since Sep 2026 across 1 repository · components `internal/k8sinventory`, "
                       "`receiver/kubeletstats`, `receiver/sqlserver`", text)
         self.assertIn("### Merged", text)
@@ -233,9 +233,14 @@ class DetailsTest(unittest.TestCase):
                       " · `internal/k8sinventory` · merged 2026-10-06 by TylerHelmuth · approved by krisztianfekete"
                       " · +29 −2 in 1 file · fixes [#50433](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/50433), "
                       "[open-telemetry/semantic-conventions#4133](https://github.com/open-telemetry/semantic-conventions/issues/4133)", text)
+        self.assertIn("### Closed without merging\n\n- **[#51150 Closed duplicate]"
+                      "(https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/51150)** · "
+                      "`receiver/sqlserver` · opentelemetry-collector-contrib · opened 2026-09-19", text)
+        self.assertIn(" · 1 closed · ", text)
+        hidden = dict(CFG, readme_hide_closed_prs=True)
+        text = contrib_log.render_section(contrib_log.sort_records(recs), hidden)
         self.assertNotIn("51150", text)
-        shown = dict(CFG, readme_hide_closed_prs=False)
-        self.assertIn("51150", contrib_log.render_section(contrib_log.sort_records(recs), shown))
+        self.assertNotIn("closed ·", text)
 
     def test_extras(self):
         notes = {"extras": [{"date": date(2026, 11, 24), "type": "talk", "title": "Kubelet stats | in practice",

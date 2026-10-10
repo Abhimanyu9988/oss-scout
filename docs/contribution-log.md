@@ -89,7 +89,7 @@ Setup step 8 does all of this for you. By hand:
 | `readme_path` / `data_path` | `README.md` / `contributions.json` | Output files |
 | `annotations_path` | `annotations.yaml` | Your notes (`.json` also works) |
 | `readme_include_own_comments` | false | Also list replies on your own PRs and issues |
-| `readme_hide_closed_prs` | true | Leave PRs closed without merging out of the README |
+| `readme_hide_closed_prs` | false | Leave PRs closed without merging out of the README (they are listed under "Closed without merging" otherwise; add a note to say why) |
 | `readme_recent_items` | 5 | How many items "Recent activity" shows |
 | `readme_show_tags` | false | Show annotation tags in the README |
 | `readme_activity_months` | 12 | Months covered by the collapsed "All activity" list; the headline, Merged and the JSON keep everything. 0 shows all |

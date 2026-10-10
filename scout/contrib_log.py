@@ -37,7 +37,7 @@ DEFAULTS = {
     "readme_title": "Open-source contributions",
     "readme_include_own_comments": False,
     "readme_show_tags": False,
-    "readme_hide_closed_prs": True,
+    "readme_hide_closed_prs": False,
     "readme_recent_items": 5,
     "readme_activity_months": 12,   # "All activity" covers this many months; everything stays in the JSON
     "orcid": "",
@@ -469,6 +469,7 @@ def summary_counts(records):
     return {
         "merged": sum(1 for r in gh_records if r["type"] == "pr" and r.get("state") == "merged"),
         "open_prs": sum(1 for r in gh_records if r["type"] == "pr" and r.get("state") == "open"),
+        "closed_prs": sum(1 for r in gh_records if r["type"] == "pr" and r.get("state") == "closed"),
         "reviews": len({r.get("parent_url") or r["url"] for r in gh_records if r["type"] == "review"}),
         "review_rounds": sum(1 for r in gh_records if r["type"] == "review"),
         "comments": len(others_comments),
@@ -494,6 +495,18 @@ def _visible(records, cfg):
             continue
         out.append(r)
     return out
+
+
+def pr_line(r):
+    """One line for an open or closed PR."""
+    parts = [f"**[#{r['number']} {_cell(r['title'])}]({r['url']})**"]
+    if r["component"] != "general":
+        parts.append(f"`{_cell(r['component'])}`")
+    parts += [r["repo"].split("/")[-1], f"opened {r['date']}"]
+    line = "- " + " · ".join(parts)
+    if r.get("note"):
+        line += f"  \n  _{_cell(r['note'])}_"
+    return line
 
 
 def merged_line(r):
@@ -529,7 +542,9 @@ def render_section(records, cfg, today=None):
 
     headline = [f"**{_plural(c['merged'], 'merged PR')}**"]
     if c["open_prs"]:
-        headline.append(f"{c['open_prs']} open")
+        headline.append(f"{c['open_prs']} in review")
+    if c["closed_prs"] and not cfg["readme_hide_closed_prs"]:
+        headline.append(f"{c['closed_prs']} closed")
     headline += [f"**{_plural(c['reviews'], 'PR')} reviewed**",
                  f"{_plural(c['comments'], 'comment')} on others' issues and PRs",
                  _plural(c["issues"], "issue") + " opened"]
@@ -560,7 +575,14 @@ def render_section(records, cfg, today=None):
     if merged:
         lines += ["### Merged", ""] + [merged_line(r) for r in merged] + [""]
 
-    recent = [r for r in sort_records(gh_shown) if not (r["type"] == "pr" and r.get("state") == "merged")]
+    in_review = sort_records([r for r in gh_shown if r["type"] == "pr" and r.get("state") == "open"])
+    if in_review:
+        lines += ["### In review", ""] + [pr_line(r) for r in in_review] + [""]
+    closed = sort_records([r for r in gh_shown if r["type"] == "pr" and r.get("state") == "closed"])
+    if closed:
+        lines += ["### Closed without merging", ""] + [pr_line(r) for r in closed] + [""]
+
+    recent = [r for r in sort_records(gh_shown) if r["type"] != "pr"]
     recent = recent[:cfg["readme_recent_items"]]
     if recent:
         lines += ["### Recent activity", ""]
