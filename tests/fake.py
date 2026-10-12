@@ -62,8 +62,11 @@ class FakeWriter:
 
 
 class FakeGitHub:
-    def __init__(self, issues_by_label=None, timelines=None, searches=None, prs_by_label=None, reviews=None):
+    def __init__(self, issues_by_label=None, timelines=None, searches=None, prs_by_label=None, reviews=None,
+                 comments=None):
         self.issues_by_label = issues_by_label or {}
+        self.comments = comments or {}
+        self.comment_calls = []
         self.prs_by_label = prs_by_label or {}
         self.timelines = timelines or {}
         self.reviews = reviews or {}
@@ -77,6 +80,10 @@ class FakeGitHub:
     def pr_reviews(self, repo, number):
         self.review_calls.append(number)
         return self.reviews.get(number, [])
+
+    def issue_comments(self, repo, number):
+        self.comment_calls.append(number)
+        return self.comments.get(number, [])
 
     def timeline(self, repo, number, max_pages=5):
         return self.timelines.get(number, [])

@@ -193,7 +193,8 @@ class GitHub:
         params = {"q": query, "per_page": 100}
         if sort:
             params.update(sort=sort, order="desc")
-        for page in self._pages("/search/issues", params, max_pages=2):
+        # Enough pages for `limit` (search returns at most 1,000 results in all).
+        for page in self._pages("/search/issues", params, max_pages=max(1, min(10, -(-limit // 100)))):
             items.extend(page.get("items", []))
             if len(items) >= limit:
                 break

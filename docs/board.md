@@ -13,6 +13,21 @@ One issue in your own repository, rebuilt every run. Sections:
   suggests expecting 2 to 7 days, then a polite ping on the PR or in the project's channel.
 - **Issues you claimed 14+ days ago with no PR:** post an update, or say you can't get to it so someone else can
   (the FAQ's advice too).
+- **Waiting on others:** open threads where you had the last word 7+ days ago and nobody has replied since: your
+  comment, an issue you opened, fixes you pushed after a review, or a re-review you asked for. Approving someone
+  else's PR doesn't count, and items already listed above aren't repeated. A short, polite nudge is fine.
+
+**To triage**
+
+- **Opened in the last 7 days in your areas:** every open issue opened recently under your repos and labels,
+  whatever state it's in, including ones claimed in their first comment or labelled as waiting the day they were
+  opened. "Free in your areas" only shows issues nobody has claimed, so it was never a list of everything new. Each
+  item says who has replied (bots and the reporter don't count), whether it still has `needs triage`, and when an
+  issue was matched by keyword because it has **no component label**. Issues nobody has answered come first.
+
+  This is the queue to work from if you want to become a triager: answer new issues with the clarifying questions
+  a maintainer would ask, reproduce bugs, and point out duplicates. Most projects ask for about a month of that
+  before a triager nomination.
 
 **To pick up**
 
@@ -30,6 +45,9 @@ One issue in your own repository, rebuilt every run. Sections:
 When something changes, a comment on the board mentions you, so it reaches the GitHub app and your email. It covers
 what's new in the sections above, plus comments, reviews, merges and closes on anything you're involved in. Each item
 is announced once; quiet days get no comment.
+
+When a new section appears after an upgrade, the first run records what's in it without announcing it, so you don't
+get a flood of old items as "new".
 
 ## How it decides an issue is free
 
@@ -77,6 +95,26 @@ To look across whole organisations, add a `discover` block:
 }
 ```
 
+To set up triage, add a `triage` block:
+
+```json
+"triage": {
+  "days": 7,
+  "keywords": ["kubelet", "k8s", "sqlserver"],
+  "repos": [
+    {"repo": "open-telemetry/opentelemetry-collector"},
+    {"repo": "open-telemetry/semantic-conventions", "keywords": ["k8s", "pod"]}
+  ]
+}
+```
+
+- `keywords` catch issues in your watched repos that were filed without a component label: a new issue whose title
+  or labels contain one of them is listed even if it has none of your labels. Matching is case-insensitive and
+  matches the start of a word, so `k8s` also matches `k8scluster`.
+- `repos` are watched for new issues only, not for free issues or PRs. Leave out `keywords` (and `labels`) to see
+  every new issue in that repo, or add them to narrow it down.
+- Set `"enabled": false` to turn triage off.
+
 `languages` is optional and filters by the repository's main language. Each run re-checks only issues that changed
 since the last one, so this stays within GitHub's rate limits.
 
@@ -94,6 +132,13 @@ since the last one, so this stays within GitHub's rate limits.
 | `max_issues_per_label` | 60 | Cap on issues read per label |
 | `ping_after_days` | 7 | When your own unreviewed PR shows up under Needs you |
 | `claim_reminder_days` | 14 | When an issue you claimed without a PR shows up |
+| `waiting_days` | 7 | How long after your last word, with no reply, a thread shows under Waiting on others |
+| `waiting_threads` | 50 | Cap on threads checked for Waiting on others per run |
+| `triage.days` | 7 | How far back the triage list goes |
+| `triage.keywords` | none | Words that catch unlabelled new issues in your watched repos |
+| `triage.repos` | none | Extra repos watched for new issues only |
+| `triage.max_per_repo` | 300 | Cap on new issues read per repo |
+| `triage.max_checks` | 150 | Cap on issues whose comments are read per run; the rest are read on later runs |
 | `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
 | `board_section_limit` | 25 | Items listed per board section; the rest are counted |
 | `board_max_comments` | 100 | After this many comments, the board moves to a fresh issue and the old one is closed with a link |

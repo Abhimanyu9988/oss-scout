@@ -33,10 +33,13 @@ class Digest:
     board_my_claims: list = field(default_factory=list)    # issues you claimed with no PR yet
     board_discovered: list = field(default_factory=list)   # free newcomer/help-wanted issues across your orgs
     discovered: list = field(default_factory=list)         # ...the new ones, for today's comment
+    board_triage: list = field(default_factory=list)       # every issue opened recently in your areas
+    triage: list = field(default_factory=list)             # ...the ones opened since the last run
+    board_waiting: list = field(default_factory=list)      # threads where you spoke last and nobody replied
 
     def is_empty(self):
         return not (self.needs_you or self.to_pick or self.review_queue or self.discovered
-                    or self.errors or self.baseline)
+                    or self.triage or self.errors or self.baseline)
 
 
 def iso(dt):
@@ -297,6 +300,210 @@ def discover(gh, cfg, now, state, exclude, errors):
     return out, new_cache
 
 
+def _triage_scopes(cfg):
+    """(repo, labels, keywords) for each place to look for new issues.
+
+    Your watched repos match by label, and also by keyword in the title or labels, so an issue
+    filed without a component label still shows up. A watched repo with no labels matches every
+    issue. `triage.repos` adds repos that are watched for new issues only."""
+    t = cfg.get("triage") or {}
+    words = list(t.get("keywords") or [])
+    scopes = []
+    for r in cfg["repos"]:
+        labels = r.get("labels") or []
+        scopes.append((r["repo"], labels, (words + list(r.get("keywords") or [])) if labels else []))
+    for r in t.get("repos") or []:
+        scopes.append((r["repo"], r.get("labels") or [], r.get("keywords") or []))
+    return scopes
+
+
+def _area(issue, repo, labels, words):
+    """Where a new issue belongs: (tag, unlabelled), or None if it's outside your areas."""
+    names = [lbl["name"] for lbl in issue.get("labels", [])]
+    component = next((n for n in names if "/" in n), None)
+    if not labels and not words:
+        return component or repo.split("/")[-1], False
+    for name in names:
+        if name in labels:
+            return name, False
+    hay = " ".join([issue.get("title", "")] + names)
+    if any(re.search(rf"(?<![a-z0-9]){re.escape(w)}", hay, re.I) for w in words):
+        return component or repo.split("/")[-1], component is None
+    return None
+
+
+def _human_repliers(comments, author):
+    """Logins of people other than the author who commented, oldest first, bots left out."""
+    out = []
+    for c in comments:
+        who = c.get("user") or {}
+        login = who.get("login", "")
+        if not login or login.lower() == author.lower() or who.get("type") == "Bot" or is_bot(login):
+            continue
+        out.append(login)
+    return out
+
+
+def new_issues(gh, cfg, now, state, errors):
+    """Every open issue opened in the last `triage.days` days in your areas, whatever its
+    bucket, with who has replied. This is the triage queue: unlike "free", it also shows
+    issues that were claimed, assigned or labelled as waiting the day they were opened.
+    Comments are re-read only for issues that changed. Returns ({key: (item, no_reply,
+    created_at)}, new_cache)."""
+    t = cfg.get("triage") or {}
+    if t.get("enabled") is False:
+        return {}, {}
+    since = (now - timedelta(days=t.get("days", 7))).strftime("%Y-%m-%d")
+    user = cfg["github_user"].lower()
+    cache, new_cache, out, checks = state.get("triage_cache", {}), {}, {}, 0
+    for repo, labels, words in _triage_scopes(cfg):
+        q = f"repo:{repo} is:issue is:open created:>={since}"
+        try:
+            hits = gh.search_issues(q, limit=t.get("max_per_repo", 300), sort="created")
+        except GitHubError as err:
+            errors.append(f"new issues in {repo}: {err}")
+            continue
+        for it in hits:
+            key = f"{repo}#{it['number']}"
+            author = (it.get("user") or {}).get("login", "")
+            if "pull_request" in it or key in out or author.lower() == user:
+                continue
+            where = _area(it, repo, labels, words)
+            if where is None:
+                continue
+            hit = cache.get(key)
+            if hit and hit.get("updated_at") == it.get("updated_at"):
+                repliers = hit.get("repliers", [])
+            elif checks < t.get("max_checks", 150):
+                checks += 1
+                try:
+                    repliers = _human_repliers(gh.issue_comments(repo, it["number"]), author)
+                except GitHubError as err:
+                    errors.append(f"{key} comments: {err}")
+                    continue
+            else:
+                continue                      # checked on a later run
+            new_cache[key] = {"updated_at": it.get("updated_at"), "repliers": repliers}
+            out[key] = _triage_item(key, it, where, repliers, user, now)
+    return out, new_cache
+
+
+def _triage_item(key, it, where, repliers, user, now):
+    tag, unlabelled = where
+    author = (it.get("user") or {}).get("login", "")
+    names = {lbl["name"].lower() for lbl in it.get("labels", [])}
+    if any(r.lower() == user for r in repliers):
+        status = "you replied"
+    elif not repliers:
+        status = "no reply yet"
+    else:
+        n = len(repliers)
+        status = f"{n} {'reply' if n == 1 else 'replies'}, last from {repliers[-1]}"
+    bits = [status]
+    if "needs triage" in names:
+        bits.append("needs triage")
+    if unlabelled:
+        bits.append("no component label")
+    age = days_between(it.get("created_at") or it.get("updated_at") or iso(now), now)
+    bits.append(f"by {author}, " + ("today" if age == 0 else f"{age}d ago"))
+    # Tag the component when the title doesn't already name it; the repo is in the link anyway.
+    named = "/" not in tag or tag.split("/")[-1].lower() in it.get("title", "").lower()
+    prefix = "" if named else f"[{tag}] "
+    item = Item(key, it.get("html_url", ""), it.get("title", ""), prefix + " · ".join(bits))
+    return item, status == "no reply yet", it.get("created_at", "")
+
+
+def _sorted_triage(found):
+    """No reply yet first, then newest first."""
+    rows = sorted(found.items(), key=lambda kv: (kv[1][2], kv[0]), reverse=True)
+    return [v[0] for _, v in sorted(rows, key=lambda kv: not kv[1][1])]
+
+
+def _when(value):
+    try:
+        return parse_time(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _last_word(events, author, user, is_pr):
+    """The last thing a person (not a bot) did on a thread: (login, time, kind)."""
+    last = None
+
+    def note(login, when, kind):
+        nonlocal last
+        t = _when(when)
+        if login and t and not is_bot(login) and (last is None or t >= last[1]):
+            last = (login.lower(), t, kind)
+
+    for ev in events:
+        kind = ev.get("event")
+        if kind == "commented":
+            note(actor_of(ev), ev.get("created_at"), "commented")
+        elif kind == "reviewed":
+            who = (ev.get("user") or {}).get("login", "")
+            state = (ev.get("state") or "").lower()
+            mine_approval = who.lower() == user and state == "approved" and author.lower() != user
+            note(who, ev.get("submitted_at"), "approved" if mine_approval else "reviewed")
+        elif kind == "line-commented":
+            for c in ev.get("comments") or []:
+                note((c.get("user") or {}).get("login", ""), c.get("created_at"), "commented")
+        elif kind == "committed" and is_pr and author.lower() == user:
+            note(author, (ev.get("committer") or {}).get("date"), "pushed")
+        elif kind == "review_requested" and actor_of(ev).lower() == user:
+            note(actor_of(ev), ev.get("created_at"), "re-requested")
+    return last
+
+
+WAIT_PHRASES = {
+    "commented": "you commented {age}d ago",
+    "reviewed": "you reviewed it {age}d ago",
+    "opened": "you opened it {age}d ago",
+    "pushed": "you pushed changes {age}d ago",
+    "re-requested": "you asked for a re-review {age}d ago",
+}
+
+
+def waiting_on_others(gh, cfg, now, errors, skip=()):
+    """Open threads where you had the last word `waiting_days`+ days ago and nobody has
+    replied since: your comment, your issue, your pushed fixes or your re-review request.
+    Approving someone else's PR isn't waiting. Returns {key: (age, Item)}."""
+    days = cfg.get("waiting_days", 7)
+    user = cfg["github_user"]
+    lo = user.lower()
+    since = (now - timedelta(days=cfg.get("followup_days", 60))).strftime("%Y-%m-%d")
+    q = f"involves:{user} is:open updated:>={since} {_repo_scope(cfg)}"
+    try:
+        threads = gh.search_issues(q, limit=cfg.get("waiting_threads", 50))
+    except GitHubError as err:
+        errors.append(f"waiting-on-others search: {err}")
+        return {}
+    out = {}
+    for th in threads:
+        repo = _repo_from(th)
+        key = f"{repo}#{th['number']}"
+        is_pr = "pull_request" in th
+        author = (th.get("user") or {}).get("login", "")
+        if key in skip or (is_pr and th.get("draft")):
+            continue
+        try:
+            events = gh.timeline(repo, th["number"])
+        except GitHubError as err:
+            errors.append(f"{key} timeline: {err}")
+            continue
+        last = _last_word(events, author, lo, is_pr)
+        if last is None and author.lower() == lo and not is_pr and _when(th.get("created_at")):
+            last = (lo, _when(th["created_at"]), "opened")
+        if last is None or last[0] != lo or last[2] == "approved":
+            continue
+        age = max(0, (now - last[1]).days)
+        if age < days:
+            continue
+        detail = WAIT_PHRASES[last[2]].format(age=age) + ", no reply since: a short nudge is fine"
+        out[key] = (age, Item(key, th.get("html_url", ""), th.get("title", ""), detail))
+    return out
+
+
 def describe_events(events, user, since):
     """Short phrases for events by other humans after `since`, collapsed per person and kind."""
     phrases = []
@@ -360,6 +567,9 @@ def build_digest(gh, cfg, state, now):
     follow, my_claims = followups(gh, cfg, now, errors)
     my_waiting = waiting_prs(gh, cfg, now, errors)
     found, cache = discover(gh, cfg, now, state, {c.key for c in cands}, errors)
+    triage_found, triage_cache = new_issues(gh, cfg, now, state, errors)
+    waiting = waiting_on_others(gh, cfg, now, errors,
+                                skip=set(my_waiting) | set(my_claims) | set(requested or {}))
     for key in list(follow):
         if key in (requested or {}):
             del follow[key]                    # already reported as a review request
@@ -392,6 +602,13 @@ def build_digest(gh, cfg, state, now):
         digest.review_queue = [_queue_item(key, label, pr, now) for key, (repo, label, pr) in queue.items()
                                if key not in seen.get("review_queue", [])]
         digest.discovered = [_disc_item(c) for k, c in _newest(found) if k not in seen.get("discovered", [])]
+        # A section added after the baseline starts quietly: the first run that has it only
+        # records what's there, instead of announcing every current item as new.
+        if "triage" in seen:
+            digest.triage = _sorted_triage({k: v for k, v in triage_found.items() if k not in seen["triage"]})
+        if "waiting" in seen:
+            digest.needs_you.extend(item for key, (age, item) in sorted(waiting.items())
+                                    if key not in seen["waiting"])
 
     # The full current lists, for the always-up-to-date board issue.
     by_recent = lambda items: sorted(items, key=lambda c: c.updated_at, reverse=True)  # noqa: E731
@@ -407,6 +624,11 @@ def build_digest(gh, cfg, state, now):
     digest.board_discovered = [_disc_item(c) for _, c in _newest(found)][:limit]
     if (cfg.get("discover") or {}).get("orgs"):
         digest.counts["discovered"] = len(found)
+    digest.board_triage = _sorted_triage(triage_found)
+    digest.board_waiting = [item for _, (age, item) in sorted(waiting.items(), key=lambda kv: (-kv[1][0], kv[0]))]
+    if triage_found:
+        digest.counts["new_issues"] = len(triage_found)
+        digest.counts["no_reply"] = sum(1 for v in triage_found.values() if v[1])
 
     def merged(name, current):
         # After a partial scan, keep old entries so they don't re-alert tomorrow.
@@ -425,8 +647,11 @@ def build_digest(gh, cfg, state, now):
             "my_waiting": merged("my_waiting", my_waiting),
             "my_claims": merged("my_claims", my_claims),
             "discovered": merged("discovered", found),
+            "triage": merged("triage", triage_found),
+            "waiting": merged("waiting", waiting),
         },
         "discover_cache": cache,
+        "triage_cache": triage_cache,
     }
     return digest, new_state
 

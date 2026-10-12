@@ -11,9 +11,13 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+# Offers to *review* or *test* ("happy to help review", "I'll open a separate issue") are not claims;
+# counting them hid real free issues as taken.
 CLAIM_RE = re.compile(
-    r"i('d| would) like to (work|take|pick|help)|i can (take|work|pick)"
-    r"|i('ll| will) (take|work|open|pick|send)|happy to (pick|take|work|help|contribute)"
+    r"i('d| would) like to (work|take|pick|help(?! (?:review|test)))|i can (take(?! a (?:look|peek))|work|pick)"
+    r"|i('ll| will) (take(?! a (?:look|peek))|work|pick|open a (?:pr|pull request)"
+    r"|send a (?:pr|pull request|fix|patch))"
+    r"|happy to (pick|take|work|contribute|help(?! (?:review|test)))"
     r"|working on (this|it)|assign (this|it)? ?to me|can i (take|work|pick)"
     r"|let me (take|work|pick)|i('m| am) (working|taking|picking)"
     r"|i have (opened|raised|submitted) a pr",

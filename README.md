@@ -7,7 +7,8 @@ explains how to start, and [CLOTributor](https://clotributor.dev) lists `help wa
 projects. Use them.
 
 What comes next is harder to keep track of. Someone opens a PR on the issue you offered to review. Your own PR sits
-unreviewed for a week. You said "I'll take this" a month ago. A maintainer replies while you're busy. A good
+unreviewed for a week. You said "I'll take this" a month ago. A maintainer replies while you're busy, or you
+replied and nobody answered. A good
 first issue appears in a project you follow, and someone has claimed it in a comment before you notice.
 
 oss-scout watches all of that for you, every day, and tells you only what changed.
@@ -24,6 +25,12 @@ Needs you
     semantic-conventions 4158  Pod memory metrics  open 9d: a polite ping is fine now
   Issues you claimed 14+ days ago with no PR
     contrib 49927  API server node proxy  post an update, or let someone else take it
+  Waiting on others: you spoke last 7+ days ago
+    sig-end-user 416  OTel in Practice talk  you opened it 9d ago, no reply since
+
+To triage
+  Opened in the last 7 days in your areas     (every new issue, whatever its state; no reply yet first)
+    contrib 51946  sqlserver: add procedure_definition event  no reply yet · needs triage
 
 To pick up
   Free in your areas                          (checked for claim comments and linked PRs)
@@ -48,6 +55,8 @@ Optionally, it also keeps:
 | Finds issues to work on | Advice | `help wanted` issues across CNCF | No | Your components, plus `good first issue` / `help wanted` across chosen organisations |
 | Checks for claim comments ("I'd like to work on this", `/assign`) and PRs that mention the issue | No | No | No | Yes |
 | Knows about your threads, PRs and claims | No | No | Event by event | As a list of what's waiting on you |
+| Lists every new issue in your areas, with who has replied, for triage | No | No | Every event in the whole repo, if you watch it | Yes, filtered to your labels and keywords |
+| Notices when you're the one waiting for a reply | No | No | No | Yes, after 7 days |
 | Reminds you to ping, review or release | Explains when to | No | No | Yes, following the FAQ's timing |
 | Records what you've done | No | No | No | Profile log and portfolio |
 

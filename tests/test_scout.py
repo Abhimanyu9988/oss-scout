@@ -130,12 +130,15 @@ class DigestTest(unittest.TestCase):
         self.assertEqual([i.key for i in digest.to_pick], [f"{REPO}#51856"])
         self.assertEqual([i.key for i in digest.needs_you], [f"{REPO}#51999"])
         self.assertEqual(digest.review_queue, [])
-        self.assertFalse(any("involves:" in q and "is:issue is:open" not in q for q in gh.queries))
+        # No "what happened since the last run" search on the first run (follow-ups and
+        # waiting-on-others look at open threads, which is fine).
+        self.assertFalse(any("involves:" in q and "is:open" not in q for q in gh.queries))
         self.assertEqual(state["seen"]["quiet"], [f"{REPO}#47988"])
         self.assertEqual(state["seen"]["review_queue"], [f"{REPO}#51224", f"{REPO}#51700"])
         self.assertEqual(sorted(gh.review_calls), [51224, 51300, 51700])
         self.assertFalse(any("review:none label:" in q for q in gh.queries))     # no per-label searches
-        self.assertEqual(len(gh.queries), 3)  # review requests, thread follow-ups, your waiting PRs
+        self.assertEqual(len(gh.queries), 5)  # review requests, thread follow-ups, your waiting PRs,
+        #                                     new issues in your areas, threads waiting on others
 
     def test_reported_prs_are_not_rechecked(self):
         _, state = build_digest(world(), CFG, {}, NOW)

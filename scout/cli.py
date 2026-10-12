@@ -89,7 +89,8 @@ def main(argv=None, gh=None, now=None, writer=None):
     if unknown:
         print(f"error: unknown deliver target(s) {unknown}; use 'github' and/or 'slack'", file=sys.stderr)
         return 2
-    count = len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue) + len(digest.discovered)
+    count = (len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue) + len(digest.discovered)
+             + len(digest.triage))
 
     if args.dry_run:
         print(text if not quiet_day else "Nothing new today.")

@@ -20,7 +20,8 @@
         "receiver/k8sevents",
         "internal/k8sinventory",
         "extension/k8sobserver",
-        "receiver/sqlserver"
+        "receiver/sqlserver",
+        "receiver/flinkmetrics"
       ]
     }
   ],
@@ -38,5 +39,33 @@
     "limit": 30
   },
   "ping_after_days": 7,
-  "claim_reminder_days": 14
+  "claim_reminder_days": 14,
+  "waiting_days": 7,
+  "triage": {
+    "days": 7,
+    "keywords": [
+      "kubelet",
+      "k8s",
+      "kubernetes",
+      "sqlserver",
+      "flink"
+    ],
+    "repos": [
+      {
+        "repo": "open-telemetry/opentelemetry-collector"
+      },
+      {
+        "repo": "open-telemetry/opentelemetry-helm-charts"
+      },
+      {
+        "repo": "open-telemetry/semantic-conventions",
+        "keywords": [
+          "k8s",
+          "kubernetes",
+          "container",
+          "pod"
+        ]
+      }
+    ]
+  }
 }

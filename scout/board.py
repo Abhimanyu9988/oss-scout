@@ -1,7 +1,7 @@
 """GitHub delivery: one 'Contribution board' issue in your own scout repo.
 
-The issue body is the live board (everything free, claimed-but-quiet and waiting for a
-first review), rewritten on every run. When something changed, a comment mentioning
+The issue body is the live board (what's waiting on you or on others, new issues to triage,
+everything free, claimed-but-quiet and waiting for a first review), rewritten on every run. When something changed, a comment mentioning
 you carries the day's news, so it reaches the GitHub app and your email.
 
 Two things keep the board polite if the repo is public:
@@ -64,6 +64,15 @@ def render_board(digest, cfg, now, home_repo=None):
     if d.get("orgs"):
         labels = " or ".join(f"`{x}`" for x in (d.get("labels") or ["good first issue", "help wanted"]))
         lines += [f"Also looking across {safe(', '.join(d['orgs']))} for issues labelled {labels}.", ""]
+    t = cfg.get("triage") or {}
+    extra = [r["repo"] for r in t.get("repos") or []]
+    if t.get("enabled") is not False and (extra or t.get("keywords")):
+        bits = []
+        if extra:
+            bits.append(f"new issues in {safe(', '.join(extra))}")
+        if t.get("keywords"):
+            bits.append("unlabelled ones mentioning " + safe(", ".join(t["keywords"])))
+        lines += ["Triage also covers " + " and ".join(bits) + ".", ""]
     lines += ["## Needs you", ""]
     lines += _section("PRs to review on threads you're in", digest.board_followups,
                       empty="Nothing waiting for you.")
@@ -71,6 +80,15 @@ def render_board(digest, cfg, now, home_repo=None):
                       empty="None. The CNCF contributor FAQ suggests a polite ping after about a week.")
     lines += _section(f"Issues you claimed {cfg.get('claim_reminder_days', 14)}+ days ago with no PR",
                       digest.board_my_claims, empty="None.")
+    lines += _section(f"Waiting on others: you spoke last {cfg.get('waiting_days', 7)}+ days ago",
+                      digest.board_waiting, empty="Nobody owes you a reply.")
+    t = cfg.get("triage") or {}
+    if t.get("enabled") is not False:
+        days = t.get("days", 7)
+        no_reply = digest.counts.get("no_reply", 0)
+        lines += ["## To triage", ""]
+        lines += _section(f"Opened in the last {days} days in your areas, {no_reply} with no reply yet",
+                          digest.board_triage, empty=f"No new issues in the last {days} days.")
     lines += ["## To pick up", ""]
     lines += _section("Free in your areas", digest.board_free,
                       empty="No unclaimed issues in these areas today.")
@@ -107,11 +125,14 @@ def render_comment(digest, cfg, now):
             f"{c.get('free', 0)} free · {c.get('quiet', 0)} claimed but quiet · "
             f"{c.get('blocked', 0)} blocked · {c.get('taken', 0)} taken"
             + (f" · {c['discovered']} free across your organisations" if "discovered" in c else "")
+            + (f" · {c['new_issues']} opened recently in your areas" if c.get("new_issues") else "")
             + ". The full lists are in the issue above.",
             "",
         ]
     if digest.needs_you:
         lines += _capped("Needs you", digest.needs_you, MAX_COMMENT_LINES)
+    if digest.triage:
+        lines += _capped("Newly opened in your areas", digest.triage, MAX_COMMENT_LINES)
     if digest.to_pick:
         heading = "Most recent free issues" if digest.baseline else "New to pick up"
         lines += _capped(heading, digest.to_pick, MAX_COMMENT_LINES)
