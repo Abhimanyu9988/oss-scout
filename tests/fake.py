@@ -73,6 +73,9 @@ class FakeGitHub:
         self.searches = searches or []   # list of (substring, results)
         self.queries = []
         self.review_calls = []
+        self.timeline_calls = []
+        self.last_total_count = None
+        self.totals = {}                 # needle -> total_count to report for that search
 
     def open_items(self, repo, label, limit=60):
         return self.issues_by_label.get(label, [])[:limit], self.prs_by_label.get(label, [])
@@ -86,11 +89,17 @@ class FakeGitHub:
         return self.comments.get(number, [])
 
     def timeline(self, repo, number, max_pages=5):
-        return self.timelines.get(number, [])
+        self.timeline_calls.append(number)
+        if number in self.timelines:
+            return self.timelines[number]
+        # Tests that only care about comments give them as plain comments.
+        return [dict(c, event="commented") for c in self.comments.get(number, [])]
 
     def search_issues(self, query, limit=100, sort=None):
         self.queries.append(query)
         for needle, results in self.searches:
             if needle in query:
+                self.last_total_count = self.totals.get(needle, len(results))
                 return results[:limit]
+        self.last_total_count = 0
         return []

@@ -121,11 +121,18 @@ def activity_on_mine(gh, cfg, since, errors):
     """What other people did on issues/PRs you're involved in since the last run."""
     user = cfg["github_user"]
     q = f"involves:{user} updated:>={iso(since)} {_repo_scope(cfg)}"
+    limit = cfg.get("activity_threads", 200)
     try:
-        hits = gh.search_issues(q, limit=40)
+        # Newest first: without a sort, search ranks by relevance and a cut-off drops
+        # arbitrary threads, including ones with fresh reviews on your own PRs.
+        hits = gh.search_issues(q, limit=limit, sort="updated")
     except GitHubError as err:
         errors.append(f"activity search: {err}")
         return []
+    total = getattr(gh, "last_total_count", None)
+    if total and total > len(hits):
+        errors.append(f"activity search: {total} threads changed since the last run, only the "
+                      f"{len(hits)} most recent were checked (raise activity_threads)")
     lines = []
     for hit in hits:
         repo = "/".join(hit["repository_url"].rstrip("/").split("/")[-2:])
@@ -344,6 +351,32 @@ def _human_repliers(comments, author):
     return out
 
 
+def _linked_prs(events):
+    """Open PRs linked to an issue, from its timeline: [(ref, author)]. A PR linked by hand
+    (a "connected" event) without a cross-reference shows up as ("a PR", "")."""
+    found, connected = [], 0
+    for ev in events:
+        kind = ev.get("event")
+        if kind == "connected":
+            connected += 1
+        elif kind == "disconnected":
+            connected = max(0, connected - 1)
+        elif kind == "cross-referenced":
+            src = (ev.get("source") or {}).get("issue") or {}
+            if "pull_request" not in src or src.get("state") != "open":
+                continue
+            if (src.get("pull_request") or {}).get("merged_at"):
+                continue
+            repo = _repo_from(src)
+            ref = f"{repo}#{src.get('number')}" if repo else f"#{src.get('number')}"
+            entry = (ref, (src.get("user") or {}).get("login", ""))
+            if entry not in found:
+                found.append(entry)
+    if not found and connected:
+        found.append(("a PR", ""))
+    return found
+
+
 def new_issues(gh, cfg, now, state, errors):
     """Every open issue opened in the last `triage.days` days in your areas, whatever its
     bucket, with who has replied. This is the triage queue: unlike "free", it also shows
@@ -372,23 +405,42 @@ def new_issues(gh, cfg, now, state, errors):
             if where is None:
                 continue
             hit = cache.get(key)
-            if hit and hit.get("updated_at") == it.get("updated_at"):
-                repliers = hit.get("repliers", [])
+            # Cache entries from before linked PRs were tracked have no "prs" and are re-read once.
+            if hit and hit.get("updated_at") == it.get("updated_at") and "prs" in hit:
+                repliers, prs = hit.get("repliers", []), [tuple(p) for p in hit["prs"]]
             elif checks < t.get("max_checks", 150):
                 checks += 1
                 try:
-                    repliers = _human_repliers(gh.issue_comments(repo, it["number"]), author)
+                    # One timeline read gives both the comments and any linked PRs.
+                    events = gh.timeline(repo, it["number"])
                 except GitHubError as err:
-                    errors.append(f"{key} comments: {err}")
+                    errors.append(f"{key} timeline: {err}")
                     continue
+                comments = [ev for ev in events if ev.get("event") == "commented"]
+                repliers = _human_repliers(comments, author)
+                prs = _linked_prs(events)
             else:
                 continue                      # checked on a later run
-            new_cache[key] = {"updated_at": it.get("updated_at"), "repliers": repliers}
-            out[key] = _triage_item(key, it, where, repliers, user, now)
+            new_cache[key] = {"updated_at": it.get("updated_at"), "repliers": repliers,
+                              "prs": [list(p) for p in prs]}
+            out[key] = _triage_item(key, it, where, repliers, user, now, prs)
     return out, new_cache
 
 
-def _triage_item(key, it, where, repliers, user, now):
+def _pr_note(prs, repo, user):
+    """'PR #16168 open by souvik-biswas-dev', 'your PR #12 open', or 'a PR is linked'."""
+    ref, author = prs[0]
+    if ref == "a PR":
+        return "a PR is linked"
+    if ref.split("#")[0] == repo:
+        ref = "#" + ref.split("#")[1]
+    more = f" (+{len(prs) - 1} more)" if len(prs) > 1 else ""
+    if author.lower() == user:
+        return f"your PR {ref} open{more}"
+    return f"PR {ref} open" + (f" by {author}" if author else "") + more
+
+
+def _triage_item(key, it, where, repliers, user, now, prs=()):
     tag, unlabelled = where
     author = (it.get("user") or {}).get("login", "")
     names = {lbl["name"].lower() for lbl in it.get("labels", [])}
@@ -400,6 +452,8 @@ def _triage_item(key, it, where, repliers, user, now):
         n = len(repliers)
         status = f"{n} {'reply' if n == 1 else 'replies'}, last from {repliers[-1]}"
     bits = [status]
+    if prs:
+        bits.append(_pr_note(prs, key.split("#")[0], user))
     if "needs triage" in names:
         bits.append("needs triage")
     if unlabelled:
@@ -410,7 +464,8 @@ def _triage_item(key, it, where, repliers, user, now):
     named = "/" not in tag or tag.split("/")[-1].lower() in it.get("title", "").lower()
     prefix = "" if named else f"[{tag}] "
     item = Item(key, it.get("html_url", ""), it.get("title", ""), prefix + " · ".join(bits))
-    return item, status == "no reply yet", it.get("created_at", "")
+    # An issue someone already has a PR for doesn't need a triage reply from you.
+    return item, status == "no reply yet" and not prs, it.get("created_at", "")
 
 
 def _sorted_triage(found):
