@@ -12,14 +12,14 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import board, contrib_log, hide, portfolio, slack
+from . import ai, board, contrib_log, hide, portfolio, slack
 from .contrib_log import load_log_config
 from .digest import build_digest, full_report, scan_candidates
 from .github import GitHub, GitHubError, resolve_token
 from .state import load_config, load_state, save_state
 
 
-def main(argv=None, gh=None, now=None, writer=None):
+def main(argv=None, gh=None, now=None, writer=None, judge=None):
     parser = argparse.ArgumentParser(prog="scout", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default=os.environ.get("SCOUT_CONFIG", "scout.config.json"))
@@ -44,6 +44,7 @@ def main(argv=None, gh=None, now=None, writer=None):
         return run_portfolio(args)
 
     now = now or datetime.now(timezone.utc).replace(microsecond=0)
+    live = gh is None                  # tests pass their own GitHub stand-in and never reach the AI API
     if gh is None:
         token = resolve_token()
         if not token:
@@ -66,7 +67,11 @@ def main(argv=None, gh=None, now=None, writer=None):
         return 0
 
     state = load_state(args.state)
-    digest, new_state = build_digest(gh, cfg, state, now)
+    if judge is None and live:
+        judge = ai.Judge.from_env(cfg)
+    digest, new_state = build_digest(gh, cfg, state, now, judge=judge)
+    if judge is not None:
+        print(f"AI check: {judge.calls} call(s), {len(digest.board_aside)} issue(s) set aside")
 
     if digest.errors and not any(digest.counts.values()):
         # Nothing could be read at all (bad token, network, rate limit). Don't post and

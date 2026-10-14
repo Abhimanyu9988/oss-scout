@@ -73,6 +73,8 @@ def summary_line(digest):
         bits.append(f"{len(digest.board_discovered)} free across your organisations")
     bits.append(f"{len(digest.board_quiet)} claimed but quiet")
     bits.append(f"{len(digest.board_queue)} to review")
+    if digest.board_aside:
+        bits.append(f"{len(digest.board_aside)} set aside by AI")
     if digest.hidden:
         bits.append(f"{len(digest.hidden)} hidden")
     return " · ".join(bits)
@@ -127,6 +129,8 @@ def render_board(digest, cfg, now, home_repo=None):
     if d.get("orgs"):
         lines += _folded(f"Free across {', '.join(d['orgs'])}", digest.board_discovered,
                          empty="Nothing new and unclaimed right now.")
+    if digest.board_aside:
+        lines += _folded("Free by the rules, but the AI check says not to start", digest.board_aside)
     lines += _folded(f"Claimed by someone else but quiet for {cfg.get('quiet_days', 45)}+ days", digest.board_quiet)
     lines += ["## To review", ""]
     lines += _folded(f"PRs in your areas waiting {cfg.get('stale_review_days', 7)}+ days for a first review",

@@ -43,6 +43,7 @@ jobs:
           SCOUT_GITHUB_TOKEN: ${{ secrets.SCOUT_GITHUB_TOKEN || github.token }}
           SCOUT_WRITE_TOKEN: ${{ github.token }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             python -m scout digest --dry-run --no-save

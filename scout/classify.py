@@ -20,7 +20,8 @@ CLAIM_RE = re.compile(
     r"|happy to (pick|take|work|contribute|help(?! (?:review|test)))"
     r"|working on (this|it)|assign (this|it)? ?to me|can i (take|work|pick)"
     r"|let me (take|work|pick)|i('m| am) (working|taking|picking)"
-    r"|i have (opened|raised|submitted) a pr",
+    r"|i have (opened|raised|submitted) a pr"
+    r"|i('ve| have) (a|an) (draft|branch|prototype|implementation|wip)\b",
     re.IGNORECASE,
 )
 ASSIGN_RE = re.compile(r"^\s*/assign\b", re.MULTILINE)   # Kubernetes (Prow) claim command

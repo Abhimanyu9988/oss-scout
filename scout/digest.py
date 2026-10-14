@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from .classify import (ASSIGN_RE, CLAIM_RE, DEFAULT_BLOCKING_LABELS, Candidate, actor_of, classify,
                        days_between, is_bot, parse_time)
+from . import ai
 from .github import GitHubError
 
 
@@ -36,6 +37,7 @@ class Digest:
     board_triage: list = field(default_factory=list)       # every issue opened recently in your areas
     triage: list = field(default_factory=list)             # ...the ones opened since the last run
     board_waiting: list = field(default_factory=list)      # threads where you spoke last and nobody replied
+    board_aside: list = field(default_factory=list)        # free by the rules, but the AI check says not to start
     hidden: list = field(default_factory=list)             # keys you hid with /hide on the board issue
 
     def is_empty(self):
@@ -594,7 +596,7 @@ def describe_events(events, user, since):
     return phrases
 
 
-def build_digest(gh, cfg, state, now):
+def build_digest(gh, cfg, state, now, judge=None):
     """Returns (digest, new_state). On the first run it records a baseline instead of
     reporting everything as new."""
     digest = Digest()
@@ -623,6 +625,14 @@ def build_digest(gh, cfg, state, now):
     follow, my_claims = followups(gh, cfg, now, errors)
     my_waiting = waiting_prs(gh, cfg, now, errors)
     found, cache = discover(gh, cfg, now, state, {c.key for c in cands}, errors)
+    aside, ai_cache = [], state.get("ai_cache", {})
+    if judge is not None:
+        # Your areas first, so a small call budget goes where it matters most.
+        pool = list(free.values()) + [c for k, c in found.items() if k not in free]
+        still, aside, ai_cache = ai.review_free(judge, gh, pool, now, state.get("ai_cache", {}), errors)
+        keep = {c.key for c in still}
+        free = {k: c for k, c in free.items() if k in keep}
+        found = {k: c for k, c in found.items() if k in keep}
     triage_found, triage_cache = new_issues(gh, cfg, now, state, errors)
     waiting = waiting_on_others(gh, cfg, now, errors,
                                 skip=set(my_waiting) | set(my_claims) | set(requested or {}))
@@ -669,6 +679,9 @@ def build_digest(gh, cfg, state, now):
     # The full current lists, for the always-up-to-date board issue.
     by_recent = lambda items: sorted(items, key=lambda c: c.updated_at, reverse=True)  # noqa: E731
     digest.board_free = [_cand_item(c, "free") for c in by_recent(free.values())]
+    digest.board_aside = [Item(c.key, c.url, c.title,
+                               ("someone has it" if verdict == "taken" else "not ready to start") + f": {reason}")
+                          for c, verdict, reason in sorted(aside, key=lambda a: a[0].updated_at, reverse=True)]
     digest.board_quiet = [_cand_item(c, "quiet") for c in by_recent(quiet.values())]
     digest.board_queue = sorted((_queue_item(key, label, pr, now) for key, (repo, label, pr) in queue.items()),
                                 key=lambda i: i.key)
@@ -707,6 +720,7 @@ def build_digest(gh, cfg, state, now):
             "waiting": merged("waiting", waiting),
         },
         "discover_cache": cache,
+        "ai_cache": ai_cache,
         "triage_cache": triage_cache,
     }
     return digest, new_state
