@@ -51,6 +51,10 @@ is announced once; quiet days get no comment.
 When a new section appears after an upgrade, the first run records what's in it without announcing it, so you don't
 get a flood of old items as "new".
 
+The board opens with a one-line count of every section. **Needs you** is always shown in full; every
+other section is folded, showing just its title and count until you click it, so a long day doesn't bury
+the part you act on.
+
 ## How it decides an issue is free
 
 GitHub's "linked PR" filter misses a lot, so it reads the timeline of every open,

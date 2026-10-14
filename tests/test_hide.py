@@ -97,7 +97,7 @@ class ProcessTest(unittest.TestCase):
         self.assertEqual(new_state["hidden"], [FREE])
         self.assertEqual(new_state["hide_cursor"], 100)
         body = board.render_board(digest, CFG, NOW, HOME)
-        self.assertIn("### Hidden (1)", body)
+        self.assertIn("<summary><b>Hidden (1)</b></summary>", body)
         self.assertIn("redirect.github.com/open-telemetry/opentelemetry-collector-contrib/issues/51856", body)
 
     def test_old_commands_are_not_replayed_and_hidden_list_persists(self):
@@ -129,7 +129,7 @@ class CliTest(unittest.TestCase):
         self.assertIn(("react", 100, "+1"), writer.calls)
         self.assertIn(("react", 101, "confused"), writer.calls)
         body = next(c[2] for c in writer.calls if c[0] == "update")
-        self.assertNotIn("issues/51856) ", body.split("### Hidden")[0])
+        self.assertNotIn("issues/51856) ", body.split("<summary><b>Hidden")[0])
         with open(state_path) as fh:
             state = json.load(fh)
         self.assertEqual(state["hidden"], [FREE])
