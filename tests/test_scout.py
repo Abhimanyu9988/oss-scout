@@ -430,3 +430,37 @@ class ActivitySearchTest(unittest.TestCase):
         errors = []
         activity_on_mine(world(), CFG, self.SINCE, errors)
         self.assertEqual(errors, [])
+
+
+class AuthorPlanTest(unittest.TestCase):
+    """The author's own plan in the issue description counts as their claim."""
+
+    def run_issue(self, body, timeline=(), created="2026-09-20T10:00:00Z", author="jinja2"):
+        raw = dict(issue(49943, "Discover custom resources", ["receiver/k8sobjects"], author=author),
+                   body=body, created_at=created)
+        return classify(Candidate.from_issue(REPO, raw, "receiver/k8sobjects"), list(timeline), user=USER, now=NOW)
+
+    def test_author_who_plans_to_build_it_has_it(self):
+        c = self.run_issue("I would like to add an opt-in custom_resources configuration")
+        self.assertEqual(c.bucket, "taken")
+        self.assertIn("jinja2 opened it planning to build it, last active 16d ago", c.reason)
+
+    def test_quiet_author_plan_and_closed_draft_pr(self):
+        timeline = [comment("jinja2", "I updated the description", "2026-08-17T00:00:00Z"), xref(49963, "closed")]
+        c = self.run_issue("I'd like to implement this.", timeline, created="2026-07-29T00:00:00Z")
+        self.assertEqual(c.bucket, "quiet")
+        self.assertIn("last active 51d ago", c.reason)               # refreshed by the author's comment
+        self.assertIn("earlier PR closed without merging (#49963)", c.reason)
+
+    def test_someone_elses_claim_takes_over(self):
+        c = self.run_issue("I'm happy to implement this",
+                           [comment("odubajDT", "I'd like to work on this", "2026-10-01T00:00:00Z")])
+        self.assertIn("claimed by odubajDT", c.reason)
+
+    def test_a_wish_is_not_a_plan(self):
+        for body in ("It would be nice to add a filter", "I would like the receiver to skip these",
+                     "Users would like to add custom resources", ""):
+            self.assertEqual(self.run_issue(body).bucket, "free", body)
+
+    def test_your_own_plan_is_mine(self):
+        self.assertEqual(self.run_issue("I will implement this", author=USER).bucket, "mine")

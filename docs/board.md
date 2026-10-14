@@ -67,6 +67,11 @@ unassigned issue and looks for three things:
    - recent means *taken*
    - 45+ days with no PR means *claimed but quiet*
    - your own claim means *yours*
+
+   The issue's own description counts too: when the author writes that they'll build it ("I would like to add
+   an opt-in option…", "I'm happy to implement this"), the issue is theirs, kept fresh by their later comments and
+   moved to *claimed but quiet* after 45 days without any. A PR that was closed without merging is noted on the
+   item, so you can see someone already tried.
 3. **Blocking labels:** waiting for author, code owners or semantic conventions, or
    discussion needed.
 
