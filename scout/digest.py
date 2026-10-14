@@ -36,6 +36,7 @@ class Digest:
     board_triage: list = field(default_factory=list)       # every issue opened recently in your areas
     triage: list = field(default_factory=list)             # ...the ones opened since the last run
     board_waiting: list = field(default_factory=list)      # threads where you spoke last and nobody replied
+    hidden: list = field(default_factory=list)             # keys you hid with /hide on the board issue
 
     def is_empty(self):
         return not (self.needs_you or self.to_pick or self.review_queue or self.discovered

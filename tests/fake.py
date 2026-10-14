@@ -60,6 +60,9 @@ class FakeWriter:
     def close_issue(self, repo, number):
         self.calls.append(("close", number))
 
+    def add_reaction(self, repo, comment_id, content):
+        self.calls.append(("react", comment_id, content))
+
 
 class FakeGitHub:
     def __init__(self, issues_by_label=None, timelines=None, searches=None, prs_by_label=None, reviews=None,

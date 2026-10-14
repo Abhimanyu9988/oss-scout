@@ -68,6 +68,23 @@ unassigned issue and looks for three things:
 
 Claim detection is a heuristic. Read the thread before you comment.
 
+## Hiding items
+
+Reply to the board issue to hide something you've seen and don't want listed again:
+
+```
+/hide semantic-conventions#3119
+/unhide semantic-conventions#3119
+```
+
+A reference can be `repo#123`, `owner/repo#123` or a link to the issue or PR, and one reply can hold several
+lines. Only your own replies count. The next run applies them in order, reacts with a thumbs-up to each one
+it understood (a confused face when it couldn't match a short repo name, so use `owner/repo#123` then),
+and removes hidden items from every section and from the day's comment. They're listed under **Hidden** at
+the end of the board, so `/unhide` is always one copy-paste away. The hidden list lives in the run state,
+so it carries over when the board moves to a fresh issue. A dry run shows the effect without reacting, and
+the next real run picks the same replies up again.
+
 ## Sharing the board
 
 If you make your repo public, the board is a live list of open work that anyone can use.
