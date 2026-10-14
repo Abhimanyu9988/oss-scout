@@ -77,6 +77,26 @@ unassigned issue and looks for three things:
 
 Claim detection is a heuristic. Read the thread before you comment.
 
+## Optional AI check
+
+People say "I'm on it" in more ways than any rule can list. If the repository has an `ANTHROPIC_API_KEY`
+secret, every issue the rules call free gets a second look from a small Claude model, which reads the
+description, comments, linked PRs and age and answers **free**, **taken** (someone owns it, has a draft
+or branch, or is iterating on the design) or **not ready** (needs a maintainer decision, depends on other
+work, is an umbrella issue or looks obsolete).
+
+Anything not judged free moves to its own folded section, *Free by the rules, but the AI check says not
+to start*, with the model's one-line reason, so nothing disappears unseen. Verdicts are cached until the
+issue changes and each run makes at most `ai.max_calls` calls, so after the first run it's usually a
+handful a day. Issues the model couldn't judge (an error, or the call budget ran out) simply stay free.
+
+```
+gh secret set ANTHROPIC_API_KEY -R <you>/oss-scout
+```
+
+Use a key made just for oss-scout, so it has its own spend limit and can be revoked on its own. Without
+the secret, or with `"ai": {"enabled": false}`, the board works exactly as before.
+
 ## Hiding items
 
 Reply to the board issue to hide something you've seen and don't want listed again:
@@ -168,6 +188,9 @@ since the last one, so this stays within GitHub's rate limits.
 | `triage.repos` | none | Extra repos watched for new issues only |
 | `triage.max_per_repo` | 300 | Cap on new issues read per repo |
 | `triage.max_checks` | 150 | Cap on issues whose comments and linked PRs are read per run; the rest are read on later runs |
+| `ai.enabled` | true when the key is set | Set `false` to skip the AI check even with a key |
+| `ai.model` | `claude-haiku-5-5` | Model for the AI check |
+| `ai.max_calls` | 40 | Most AI calls per run; the rest are judged on later runs |
 | `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
 | `board_section_limit` | 25 | Items listed per board section; the rest are counted |
 | `board_max_comments` | 100 | After this many comments, the board moves to a fresh issue and the old one is closed with a link |
