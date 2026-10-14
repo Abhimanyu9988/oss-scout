@@ -23,6 +23,20 @@
         "receiver/sqlserver",
         "receiver/flinkmetrics"
       ]
+    },
+    {
+      "repo": "open-telemetry/semantic-conventions",
+      "labels": [
+        "area:k8s",
+        "area:db"
+      ],
+      "keywords": [
+        "container",
+        "pod",
+        "db",
+        "sql",
+        "stored_procedure"
+      ]
     }
   ],
   "discover": {
@@ -56,16 +70,15 @@
       },
       {
         "repo": "open-telemetry/opentelemetry-helm-charts"
-      },
-      {
-        "repo": "open-telemetry/semantic-conventions",
-        "keywords": [
-          "k8s",
-          "kubernetes",
-          "container",
-          "pod"
-        ]
       }
     ]
-  }
+  },
+  "blocking_labels": [
+    "waiting for author",
+    "waiting-for:semantic-conventions",
+    "waiting-for-code-owners",
+    "discussion needed",
+    "needs discussion",
+    "triage:needs-triage"
+  ]
 }
