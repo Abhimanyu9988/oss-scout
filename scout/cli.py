@@ -12,7 +12,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import board, contrib_log, portfolio, slack
+from . import board, contrib_log, hide, portfolio, slack
 from .contrib_log import load_log_config
 from .digest import build_digest, full_report, scan_candidates
 from .github import GitHub, GitHubError, resolve_token
@@ -75,6 +75,10 @@ def main(argv=None, gh=None, now=None, writer=None):
             print(f"error: {err}", file=sys.stderr)
         print("error: couldn't read anything from GitHub; nothing posted, state unchanged.", file=sys.stderr)
         return 3
+
+    # /hide and /unhide replies on the board issue; applied before anything is rendered.
+    board_repo = cfg.get("board_repo") or os.environ.get("GITHUB_REPOSITORY", "")
+    reactions = hide.process(gh, cfg, state, new_state, digest, board_repo, advance=not args.dry_run)
     payload = slack.build_payload(digest, cfg.get("title", "Contribution scout"), now.strftime("%a %d %b"))
     text = slack.to_plain_text(payload)
 
@@ -115,6 +119,8 @@ def main(argv=None, gh=None, now=None, writer=None):
                                     or resolve_token())
                 url = board.publish(writer, repo, digest, cfg, now, comment=not quiet_day)
                 print(f"Board updated: {url}" + ("" if quiet_day else f" (comment with {count} item(s))"))
+                for problem in hide.post_reactions(writer, repo, reactions):
+                    print(f"warning: {problem}", file=sys.stderr)
             if "slack" in deliver and not quiet_day:
                 webhook = os.environ.get("SLACK_WEBHOOK_URL")
                 if not webhook:

@@ -174,6 +174,11 @@ class GitHub:
                                 {"state": "closed", "state_reason": "completed"})
         return data
 
+    def add_reaction(self, repo, comment_id, content):
+        data, _ = self._request(f"{self.api}/repos/{repo}/issues/comments/{comment_id}/reactions", "POST",
+                                {"content": content})
+        return data
+
     def add_comment(self, repo, number, body):
         data, _ = self._request(f"{self.api}/repos/{repo}/issues/{number}/comments", "POST", {"body": body})
         return data
