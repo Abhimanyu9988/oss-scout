@@ -100,10 +100,10 @@ class NewIssuesTest(unittest.TestCase):
     def test_unchanged_issues_are_not_re_read(self):
         gh = contrib_world()
         _, cache = new_issues(gh, cfg(), NOW, {}, [])
-        self.assertEqual(len(gh.comment_calls), 3)
+        self.assertEqual(len(gh.timeline_calls), 3)
         gh2 = contrib_world()
         new_issues(gh2, cfg(), NOW, {"triage_cache": cache}, [])
-        self.assertEqual(gh2.comment_calls, [])
+        self.assertEqual(gh2.timeline_calls, [])
 
     def test_triage_only_repos_whole_or_by_keyword(self):
         gh = FakeGitHub(searches=[
@@ -247,3 +247,53 @@ class SearchPagingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TriageLinkedPrTest(unittest.TestCase):
+    def _world(self, events_for_1):
+        gh = contrib_world()
+        gh.timelines[1] = events_for_1
+        return gh
+
+    def _pr_ref(self, n, state="open", author="souvik-biswas-dev", repo=REPO, merged=False):
+        return {"event": "cross-referenced", "created_at": "2026-10-10T11:00:00Z",
+                "source": {"issue": {"number": n, "state": state, "user": {"login": author},
+                                     "repository": {"full_name": repo},
+                                     "pull_request": {"merged_at": "2026-10-11T00:00:00Z" if merged else None}}}}
+
+    def test_open_pr_is_named_and_not_counted_as_needing_a_reply(self):
+        found, cache = new_issues(self._world([self._pr_ref(16168)]), cfg(), NOW, {}, [])
+        item, no_reply, _ = found[f"{REPO}#1"]
+        self.assertIn("no reply yet · PR #16168 open by souvik-biswas-dev", item.detail)
+        self.assertFalse(no_reply)
+        self.assertEqual(cache[f"{REPO}#1"]["prs"], [[f"{REPO}#16168", "souvik-biswas-dev"]])
+
+    def test_closed_and_merged_prs_are_ignored(self):
+        events = [self._pr_ref(10, state="closed"), self._pr_ref(11, state="closed", merged=True)]
+        found, _ = new_issues(self._world(events), cfg(), NOW, {}, [])
+        self.assertNotIn("PR", found[f"{REPO}#1"][0].detail)
+        self.assertTrue(found[f"{REPO}#1"][1])
+
+    def test_your_own_pr_and_a_pr_in_another_repo(self):
+        found, _ = new_issues(self._world([self._pr_ref(5, author=USER)]), cfg(), NOW, {}, [])
+        self.assertIn("your PR #5 open", found[f"{REPO}#1"][0].detail)
+        found, _ = new_issues(self._world([self._pr_ref(1, author="stuart23", repo="stuart23/fork")]),
+                              cfg(), NOW, {}, [])
+        self.assertIn("PR stuart23/fork#1 open by stuart23", found[f"{REPO}#1"][0].detail)
+
+    def test_pr_linked_by_hand_without_a_cross_reference(self):
+        found, _ = new_issues(self._world([{"event": "connected", "created_at": "2026-10-10T11:00:00Z"}]),
+                              cfg(), NOW, {}, [])
+        self.assertIn("a PR is linked", found[f"{REPO}#1"][0].detail)
+        unlinked = [{"event": "connected"}, {"event": "disconnected"}]
+        found, _ = new_issues(self._world(unlinked), cfg(), NOW, {}, [])
+        self.assertNotIn("PR", found[f"{REPO}#1"][0].detail)
+
+    def test_old_cache_entries_without_pr_info_are_re_read_once(self):
+        _, cache = new_issues(contrib_world(), cfg(), NOW, {}, [])
+        for entry in cache.values():
+            del entry["prs"]
+        gh = contrib_world()
+        _, cache2 = new_issues(gh, cfg(), NOW, {"triage_cache": cache}, [])
+        self.assertEqual(len(gh.timeline_calls), 3)
+        self.assertTrue(all("prs" in e for e in cache2.values()))

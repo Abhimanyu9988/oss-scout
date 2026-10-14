@@ -23,7 +23,9 @@ One issue in your own repository, rebuilt every run. Sections:
   whatever state it's in, including ones claimed in their first comment or labelled as waiting the day they were
   opened. "Free in your areas" only shows issues nobody has claimed, so it was never a list of everything new. Each
   item says who has replied (bots and the reporter don't count), whether it still has `needs triage`, and when an
-  issue was matched by keyword because it has **no component label**. Issues nobody has answered come first.
+  issue was matched by keyword because it has **no component label**. When someone already has an open PR for
+  the issue, the item says so (`PR #16168 open by …`, or `a PR is linked` when it was linked by hand), and it no
+  longer counts as unanswered. Issues nobody has answered and nobody is fixing come first.
 
   This is the queue to work from if you want to become a triager: answer new issues with the clarifying questions
   a maintainer would ask, reproduce bugs, and point out duplicates. Most projects ask for about a month of that
@@ -129,6 +131,7 @@ since the last one, so this stays within GitHub's rate limits.
 | `stale_review_days` | 7 | Age before an unreviewed PR joins the review list |
 | `followup_days` | 60 | How far back to look for issues you're involved in |
 | `followup_threads` | 40 | Cap on those issues checked per run |
+| `activity_threads` | 200 | Cap on threads checked for new activity since the last run, newest first; a run that hits it says so in a Partial scan note |
 | `max_issues_per_label` | 60 | Cap on issues read per label |
 | `ping_after_days` | 7 | When your own unreviewed PR shows up under Needs you |
 | `claim_reminder_days` | 14 | When an issue you claimed without a PR shows up |
@@ -138,7 +141,7 @@ since the last one, so this stays within GitHub's rate limits.
 | `triage.keywords` | none | Words that catch unlabelled new issues in your watched repos |
 | `triage.repos` | none | Extra repos watched for new issues only |
 | `triage.max_per_repo` | 300 | Cap on new issues read per repo |
-| `triage.max_checks` | 150 | Cap on issues whose comments are read per run; the rest are read on later runs |
+| `triage.max_checks` | 150 | Cap on issues whose comments and linked PRs are read per run; the rest are read on later runs |
 | `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
 | `board_section_limit` | 25 | Items listed per board section; the rest are counted |
 | `board_max_comments` | 100 | After this many comments, the board moves to a fresh issue and the old one is closed with a link |

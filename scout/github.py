@@ -41,6 +41,7 @@ class GitHub:
         self._sleep = sleep
         self._search_interval = search_interval
         self._last_search = 0.0
+        self.last_total_count = None   # total_count of the latest search_issues call
 
     def _get(self, url):
         return self._request(url)
@@ -194,7 +195,10 @@ class GitHub:
         if sort:
             params.update(sort=sort, order="desc")
         # Enough pages for `limit` (search returns at most 1,000 results in all).
+        self.last_total_count = None
         for page in self._pages("/search/issues", params, max_pages=max(1, min(10, -(-limit // 100)))):
+            if self.last_total_count is None:
+                self.last_total_count = page.get("total_count")
             items.extend(page.get("items", []))
             if len(items) >= limit:
                 break

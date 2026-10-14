@@ -398,3 +398,35 @@ class CliTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ActivitySearchTest(unittest.TestCase):
+    SINCE = datetime(2026, 10, 13, 7, 0, tzinfo=timezone.utc)
+
+    def test_newest_first_with_room_for_a_busy_day(self):
+        from scout.digest import activity_on_mine
+        gh = world()
+        calls = []
+        real = gh.search_issues
+
+        def spy(query, limit=100, sort=None):
+            calls.append((query, limit, sort))
+            return real(query, limit, sort)
+        gh.search_issues = spy
+        activity_on_mine(gh, CFG, self.SINCE, [])
+        self.assertEqual(calls[0][1:], (200, "updated"))
+
+    def test_a_cut_off_search_is_reported_not_silent(self):
+        from scout.digest import activity_on_mine
+        gh = world()
+        gh.totals["involves:"] = 260
+        errors = []
+        activity_on_mine(gh, CFG, self.SINCE, errors)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("260 threads changed since the last run", errors[0])
+
+    def test_no_warning_when_everything_fits(self):
+        from scout.digest import activity_on_mine
+        errors = []
+        activity_on_mine(world(), CFG, self.SINCE, errors)
+        self.assertEqual(errors, [])
