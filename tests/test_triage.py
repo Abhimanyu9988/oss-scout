@@ -148,7 +148,7 @@ class TriageDigestTest(unittest.TestCase):
         self.assertEqual(keys, ["3", "1", "2"])            # 3 and 1 have no reply (3 is newer by number)
         text = board.render_board(digest, cfg(), NOW, "Abhimanyu9988/oss-scout")
         self.assertIn("## To triage", text)
-        self.assertIn("### Opened in the last 7 days in your areas, 2 with no reply yet (3)", text)
+        self.assertIn("<summary><b>Opened in the last 7 days in your areas, 2 with no reply yet (3)</b></summary>", text)
         self.assertLess(text.index("## To triage"), text.index("## To pick up"))
         self.assertIn("unlabelled ones mentioning kubelet, k8s, sqlserver", text)
 

@@ -50,7 +50,10 @@
       "help wanted"
     ],
     "max_age_days": 90,
-    "limit": 30
+    "limit": 30,
+    "languages": [
+      "go"
+    ]
   },
   "ping_after_days": 7,
   "claim_reminder_days": 14,
@@ -66,7 +69,14 @@
     ],
     "repos": [
       {
-        "repo": "open-telemetry/opentelemetry-collector"
+        "repo": "open-telemetry/opentelemetry-collector",
+        "keywords": [
+          "kubelet",
+          "k8s",
+          "kubernetes",
+          "sqlserver",
+          "flink"
+        ]
       },
       {
         "repo": "open-telemetry/opentelemetry-helm-charts"

@@ -49,11 +49,43 @@ def _capped(heading, items, limit=None, empty="Nothing right now.", more="see th
     return lines
 
 
+def _collapsed(heading, items, limit, empty="Nothing right now."):
+    """A section folded into a <details> block: only its title and count show until opened."""
+    lines = ["<details>", f"<summary><b>{heading} ({len(items)})</b></summary>", ""]
+    if not items:
+        lines.append(f"_{empty}_")
+    lines += [_line(i) for i in items[:limit]]
+    if len(items) > limit:
+        lines.append(f"- _…and {len(items) - limit} more, not listed here_")
+    return lines + ["", "</details>", ""]
+
+
+def summary_line(digest):
+    """One line that says at a glance whether there's anything to open."""
+    needs = (len(digest.board_followups) + len(digest.board_my_waiting) + len(digest.board_my_claims)
+             + len(digest.board_waiting))
+    bits = [f"**{needs} need{'s' if needs == 1 else ''} you**"]
+    if digest.board_triage:
+        no_reply = digest.counts.get("no_reply", 0)
+        bits.append(f"{len(digest.board_triage)} to triage ({no_reply} with no reply)")
+    bits.append(f"{len(digest.board_free)} free in your areas")
+    if digest.board_discovered:
+        bits.append(f"{len(digest.board_discovered)} free across your organisations")
+    bits.append(f"{len(digest.board_quiet)} claimed but quiet")
+    bits.append(f"{len(digest.board_queue)} to review")
+    if digest.hidden:
+        bits.append(f"{len(digest.hidden)} hidden")
+    return " · ".join(bits)
+
+
 def render_board(digest, cfg, now, home_repo=None):
     cap = cfg.get("board_section_limit", SECTION_LIMIT)
 
     def _section(heading, items, empty="Nothing right now."):
         return _capped(heading, items, cap, empty=empty, more="not listed here")
+
+    def _folded(heading, items, empty="Nothing right now."):
+        return _collapsed(heading, items, cap, empty=empty)
 
     tool = f"[oss-scout](https://github.com/{home_repo})" if home_repo else "oss-scout"
     repos = ", ".join(r["repo"] for r in cfg["repos"])
@@ -73,7 +105,7 @@ def render_board(digest, cfg, now, home_repo=None):
         if t.get("keywords"):
             bits.append("unlabelled ones mentioning " + safe(", ".join(t["keywords"])))
         lines += ["Triage also covers " + " and ".join(bits) + ".", ""]
-    lines += ["## Needs you", ""]
+    lines += [summary_line(digest), "", "## Needs you", ""]
     lines += _section("PRs to review on threads you're in", digest.board_followups,
                       empty="Nothing waiting for you.")
     lines += _section(f"Your PRs with no review after {cfg.get('ping_after_days', 7)}+ days", digest.board_my_waiting,
@@ -87,24 +119,24 @@ def render_board(digest, cfg, now, home_repo=None):
         days = t.get("days", 7)
         no_reply = digest.counts.get("no_reply", 0)
         lines += ["## To triage", ""]
-        lines += _section(f"Opened in the last {days} days in your areas, {no_reply} with no reply yet",
-                          digest.board_triage, empty=f"No new issues in the last {days} days.")
+        lines += _folded(f"Opened in the last {days} days in your areas, {no_reply} with no reply yet",
+                         digest.board_triage, empty=f"No new issues in the last {days} days.")
     lines += ["## To pick up", ""]
-    lines += _section("Free in your areas", digest.board_free,
-                      empty="No unclaimed issues in these areas today.")
+    lines += _folded("Free in your areas", digest.board_free,
+                     empty="No unclaimed issues in these areas today.")
     if d.get("orgs"):
-        lines += _section(f"Free across {', '.join(d['orgs'])}", digest.board_discovered,
-                          empty="Nothing new and unclaimed right now.")
-    lines += _section(f"Claimed by someone else but quiet for {cfg.get('quiet_days', 45)}+ days", digest.board_quiet)
+        lines += _folded(f"Free across {', '.join(d['orgs'])}", digest.board_discovered,
+                         empty="Nothing new and unclaimed right now.")
+    lines += _folded(f"Claimed by someone else but quiet for {cfg.get('quiet_days', 45)}+ days", digest.board_quiet)
     lines += ["## To review", ""]
-    lines += _section(f"PRs in your areas waiting {cfg.get('stale_review_days', 7)}+ days for a first review",
-                      digest.board_queue)
+    lines += _folded(f"PRs in your areas waiting {cfg.get('stale_review_days', 7)}+ days for a first review",
+                     digest.board_queue)
     if digest.hidden:
-        lines += [f"### Hidden ({len(digest.hidden)})", ""]
+        lines += ["<details>", f"<summary><b>Hidden ({len(digest.hidden)})</b></summary>", ""]
         for key in digest.hidden:
             repo, number = key.rsplit("#", 1)
             lines.append(f"- [{_ref(key)}]({quiet_link(f'https://github.com/{repo}/issues/{number}')})")
-        lines.append("")
+        lines += ["", "</details>", ""]
     lines += [
         "---",
         "_To hide an item from this board, reply `/hide repo#123` (or `/unhide repo#123`, or paste the "

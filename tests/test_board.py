@@ -29,9 +29,9 @@ class RenderTest(unittest.TestCase):
     def test_board_lists_everything_politely(self):
         digest, _ = baseline()
         body = board.render_board(digest, CFG, NOW, HOME)
-        self.assertIn("### Free in your areas (1)", body)
-        self.assertIn("### Claimed by someone else but quiet for 45+ days (1)", body)
-        self.assertIn("### PRs in your areas waiting 7+ days for a first review (2)", body)
+        self.assertIn("<summary><b>Free in your areas (1)</b></summary>", body)
+        self.assertIn("<summary><b>Claimed by someone else but quiet for 45+ days (1)</b></summary>", body)
+        self.assertIn("<summary><b>PRs in your areas waiting 7+ days for a first review (2)</b></summary>", body)
         self.assertIn("https://redirect.github.com/open-telemetry/opentelemetry-collector-contrib/issues/51856", body)
         self.assertNotIn("](https://github.com/open-telemetry", body)   # no backlink-creating links
         self.assertNotRegex(body, r"(?<![\w/])#\d")                       # no bare #N autolinks
@@ -165,7 +165,7 @@ class SizeTest(unittest.TestCase):
         digest, _ = baseline()
         digest.board_free = [Item(f"o/r#{n}", f"https://github.com/o/r/issues/{n}", "t", "") for n in range(40)]
         body = board.render_board(digest, dict(CFG, board_section_limit=10), NOW, HOME)
-        self.assertIn("### Free in your areas (40)", body)
+        self.assertIn("<summary><b>Free in your areas (40)</b></summary>", body)
         self.assertIn("…and 30 more, not listed here", body)
         self.assertLess(len(body), board.BODY_LIMIT)
 
@@ -176,3 +176,18 @@ class SizeTest(unittest.TestCase):
         self.assertEqual([c[0] for c in w.calls], ["find", "label", "create", "comment", "close"])
         self.assertIn("Continued in #1", w.calls[3][2])
         self.assertEqual(url, f"https://github.com/{HOME}/issues/1")
+
+
+class LayoutTest(unittest.TestCase):
+    def test_summary_first_needs_you_open_and_the_rest_folded(self):
+        digest, _ = baseline()
+        body = board.render_board(digest, CFG, NOW, HOME)
+        summary = board.summary_line(digest)
+        self.assertIn("**0 need you**", summary)
+        self.assertIn("1 free in your areas", summary)
+        self.assertIn("2 to review", summary)
+        self.assertLess(body.index(summary), body.index("## Needs you"))
+        needs = body[body.index("## Needs you"):body.index("## To pick up")]
+        self.assertNotIn("<details>", needs.split("## To triage")[0])          # always open
+        self.assertEqual(body.count("<details>"), body.count("</details>"))
+        self.assertIn("<details>\n<summary><b>Free in your areas (1)</b></summary>", body)
