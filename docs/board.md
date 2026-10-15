@@ -191,6 +191,7 @@ since the last one, so this stays within GitHub's rate limits.
 | `ai.enabled` | true when the key is set | Set `false` to skip the AI check even with a key |
 | `ai.model` | `claude-haiku-5-5` | Model for the AI check |
 | `ai.max_calls` | 40 | Most AI calls per run; the rest are judged on later runs |
+| `ai.max_tokens` | 1024 | Most tokens the model may write per answer; the answer is one short JSON line |
 | `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
 | `board_section_limit` | 25 | Items listed per board section; the rest are counted |
 | `board_max_comments` | 100 | After this many comments, the board moves to a fresh issue and the old one is closed with a link |
