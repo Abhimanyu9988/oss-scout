@@ -50,6 +50,32 @@ class ParseTest(unittest.TestCase):
                 ai.parse_verdict(text)
 
 
+class StopReasonTest(unittest.TestCase):
+    @staticmethod
+    def stopped(text):
+        return lambda url, headers, payload, timeout=60: (
+            {"content": [{"type": "text", "text": text}], "stop_reason": "max_tokens"})
+
+    def test_sends_the_configured_cap(self):
+        seen = []
+        post = lambda url, headers, payload, timeout=60: seen.append(payload) or (
+            {"content": [{"type": "text", "text": '{"verdict": "free", "reason": "x"}'}], "stop_reason": "end_turn"})
+        ai.Judge("k", post=post).ask("p")
+        ai.Judge("k", post=post, max_tokens=300).ask("p")
+        self.assertEqual([p["max_tokens"] for p in seen], [ai.MAX_TOKENS, 300])
+
+    def test_cut_off_after_the_json_still_counts(self):
+        j = ai.Judge("k", post=self.stopped('{"verdict": "taken", "reason": "draft PR"}\nAlso, the issue'))
+        self.assertEqual(j.ask("p"), ("taken", "draft PR"))
+
+    def test_cut_off_before_the_json_reports_what_it_wrote(self):
+        j = ai.Judge("k", post=self.stopped("Let me look at the comments first. The author said"))
+        with self.assertRaises(ai.AIError) as ctx:
+            j.ask("p")
+        self.assertIn("max_tokens (1024)", str(ctx.exception))
+        self.assertIn("Let me look at the comments", str(ctx.exception))
+
+
 class ReviewTest(unittest.TestCase):
     def test_set_aside_items_leave_free_and_get_their_own_section(self):
         model = FakeModel()

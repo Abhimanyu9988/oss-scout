@@ -24,6 +24,7 @@ VERDICTS = ("free", "taken", "not_ready")
 BODY_CHARS = 6000
 COMMENT_CHARS = 800
 MAX_COMMENTS = 25
+MAX_TOKENS = 1024          # the answer is tiny; the cap only needs room for a model that says a bit more
 
 SYSTEM = """You help an open-source contributor decide which GitHub issues are worth starting.
 Rules have already found no open PR, no obvious claim and no blocking label. Read the issue and
@@ -55,10 +56,11 @@ def _post(url, headers, payload, timeout=60):
 
 
 class Judge:
-    def __init__(self, api_key, model=DEFAULT_MODEL, max_calls=40, post=_post):
+    def __init__(self, api_key, model=DEFAULT_MODEL, max_calls=40, post=_post, max_tokens=MAX_TOKENS):
         self.api_key = api_key
         self.model = model
         self.max_calls = max_calls
+        self.max_tokens = max_tokens
         self.calls = 0
         self._post = post
 
@@ -68,18 +70,26 @@ class Judge:
         key = os.environ.get("ANTHROPIC_API_KEY")
         if not key or ai.get("enabled") is False:
             return None
-        return cls(key, ai.get("model", DEFAULT_MODEL), ai.get("max_calls", 40))
+        return cls(key, ai.get("model", DEFAULT_MODEL), ai.get("max_calls", 40),
+                   max_tokens=ai.get("max_tokens", MAX_TOKENS))
 
     def ask(self, prompt):
         self.calls += 1
         data = self._post(API, {"x-api-key": self.api_key, "anthropic-version": "2023-06-01",
                                 "content-type": "application/json"},
-                          {"model": self.model, "max_tokens": 200, "system": SYSTEM,
+                          {"model": self.model, "max_tokens": self.max_tokens, "system": SYSTEM,
                            "messages": [{"role": "user", "content": prompt}]})
-        if data.get("stop_reason") in ("max_tokens", "refusal"):
-            raise AIError(f"model stopped with {data.get('stop_reason')}")
+        stop = data.get("stop_reason")
+        if stop == "refusal":
+            raise AIError("model stopped with refusal")
         text = "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
-        return parse_verdict(text)
+        if stop != "max_tokens":
+            return parse_verdict(text)
+        try:                                  # cut off, but the JSON may already be complete
+            return parse_verdict(text)
+        except AIError:
+            start = " ".join(text.split())[:120]
+            raise AIError(f"model stopped with max_tokens ({self.max_tokens}); reply began: {start!r}") from None
 
 
 def parse_verdict(text):
