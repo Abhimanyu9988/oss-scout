@@ -21,7 +21,7 @@ REF_RE = re.compile(
 
 DIGEST_LISTS = ("needs_you", "to_pick", "review_queue", "discovered", "triage", "board_free", "board_quiet",
                 "board_queue", "board_followups", "board_my_waiting", "board_my_claims", "board_discovered",
-                "board_triage", "board_waiting", "board_aside")
+                "board_triage", "board_waiting", "board_aside", "board_mine", "board_activity")
 
 
 def base_key(key):

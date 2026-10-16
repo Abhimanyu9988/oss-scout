@@ -79,6 +79,8 @@ class FakeGitHub:
         self.timeline_calls = []
         self.last_total_count = None
         self.totals = {}                 # needle -> total_count to report for that search
+        self.incomplete = set()          # needles whose searches GitHub "times out" on
+        self.last_incomplete = False
 
     def open_items(self, repo, label, limit=60):
         return self.issues_by_label.get(label, [])[:limit], self.prs_by_label.get(label, [])
@@ -100,6 +102,12 @@ class FakeGitHub:
 
     def search_issues(self, query, limit=100, sort=None):
         self.queries.append(query)
+        # Searches whose query contains one of these come back the way GitHub's timeout
+        # does: nothing found, incomplete_results set, no error.
+        self.last_incomplete = any(needle in query for needle in self.incomplete)
+        if self.last_incomplete:
+            self.last_total_count = 0
+            return []
         for needle, results in self.searches:
             if needle in query:
                 self.last_total_count = self.totals.get(needle, len(results))

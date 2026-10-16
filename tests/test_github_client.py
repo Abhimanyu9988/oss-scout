@@ -41,6 +41,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, {"message": "You have exceeded a secondary rate limit."})
             return self._send(200, [{"user": {"login": "rev"}}])
         if url.path == "/search/issues":
+            query = q.get("q", [""])[0]
+            if "slow-once" in query:
+                # GitHub's search timeout: whatever was found so far, no error.
+                Handler.slow_calls = getattr(Handler, "slow_calls", 0) + 1
+                if Handler.slow_calls == 1:
+                    return self._send(200, {"total_count": 0, "incomplete_results": True, "items": []})
+                return self._send(200, {"total_count": 1, "incomplete_results": False, "items": [{"number": 11}]})
+            if "always-slow" in query:
+                return self._send(200, {"total_count": 0, "incomplete_results": True, "items": []})
             return self._send(200, {"items": [{"number": 9}]})
         if url.path == "/repos/o/r/issues/5/timeline":
             if not getattr(self.server, "throttled", False):
@@ -126,6 +135,17 @@ class ClientTest(unittest.TestCase):
 
     def test_search(self):
         self.assertEqual(self.gh.search_issues("is:pr")[0]["number"], 9)
+        self.assertFalse(self.gh.last_incomplete)
+
+    def test_search_cut_short_by_github_is_retried(self):
+        self.assertEqual([i["number"] for i in self.gh.search_issues("slow-once")], [11])
+        self.assertFalse(self.gh.last_incomplete)
+
+    def test_search_still_cut_short_is_flagged_not_trusted(self):
+        before = sum(1 for c in Handler.calls if c[0] == "/search/issues")
+        self.assertEqual(self.gh.search_issues("always-slow"), [])
+        self.assertTrue(self.gh.last_incomplete)
+        self.assertEqual(sum(1 for c in Handler.calls if c[0] == "/search/issues") - before, 2)   # one retry
 
     def test_retries_after_rate_limit(self):
         self.assertEqual(self.gh.timeline("o/r", 5), [{"event": "commented"}])

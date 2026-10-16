@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from . import ai, board, contrib_log, hide, portfolio, slack
 from .contrib_log import load_log_config
 from .digest import build_digest, full_report, scan_candidates
+from .classify import parse_time
 from .github import GitHub, GitHubError, resolve_token
 from .state import load_config, load_state, save_state
 
@@ -28,6 +29,9 @@ def main(argv=None, gh=None, now=None, writer=None, judge=None):
     d.add_argument("--state", default=os.environ.get("SCOUT_STATE", ".scout-state/state.json"))
     d.add_argument("--dry-run", action="store_true", help="print instead of posting; state is still saved")
     d.add_argument("--no-save", action="store_true", help="don't update the state file")
+    d.add_argument("--activity-since", default=os.environ.get("SCOUT_ACTIVITY_SINCE") or None,
+                   help="re-check activity on your threads from this UTC time (YYYY-MM-DD or "
+                        "YYYY-MM-DDTHH:MM:SSZ), to catch up after a missed day")
     sub.add_parser("report", help="print every bucket as markdown")
     lg = sub.add_parser("log", help="rebuild your public contribution log (JSON + README section)")
     lg.add_argument("--log-config", default=os.environ.get("SCOUT_LOG_CONFIG", "contrib-log.config.json"))
@@ -69,7 +73,15 @@ def main(argv=None, gh=None, now=None, writer=None, judge=None):
     state = load_state(args.state)
     if judge is None and live:
         judge = ai.Judge.from_env(cfg)
-    digest, new_state = build_digest(gh, cfg, state, now, judge=judge)
+    activity_since = None
+    if args.activity_since:
+        raw = args.activity_since.strip()
+        try:
+            activity_since = parse_time(raw if "T" in raw else raw + "T00:00:00Z")
+        except ValueError:
+            print(f"error: --activity-since {raw!r} is not YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ", file=sys.stderr)
+            return 2
+    digest, new_state = build_digest(gh, cfg, state, now, judge=judge, activity_since=activity_since)
     if judge is not None:
         print(f"AI check: {judge.calls} call(s), {len(digest.board_aside)} issue(s) set aside")
 
