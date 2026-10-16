@@ -21,7 +21,9 @@
         "internal/k8sinventory",
         "extension/k8sobserver",
         "receiver/sqlserver",
-        "receiver/flinkmetrics"
+        "receiver/flinkmetrics",
+        "exporter/splunkhec",
+        "receiver/splunkhec"
       ]
     },
     {
