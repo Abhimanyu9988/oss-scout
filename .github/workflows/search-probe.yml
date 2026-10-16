@@ -1,0 +1,58 @@
+name: Search probe (temporary)
+
+on:
+  push:
+    branches: [debug/search-probe]
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Probe oss-scout's own calls
+        env:
+          GHT: ${{ github.token }}
+        run: |
+          python3 - <<'PY' > out.md
+          import os
+          from datetime import datetime, timezone, timedelta
+          from scout.github import GitHub
+          from scout.state import load_config
+          from scout import digest as d
+          cfg = load_config("scout.config.json")
+          real = GitHub(os.environ["GHT"])
+          log = []
+          orig = real._get
+          def spy(url):
+              data, link = orig(url)
+              if "/search/issues" in url:
+                  items = data.get("items", []) if isinstance(data, dict) else []
+                  log.append((url, data.get("total_count"), data.get("incomplete_results"),
+                              [(i["html_url"].split("github.com/")[1], "pull_request" in i) for i in items]))
+              return data, link
+          real._get = spy
+          now = datetime.now(timezone.utc).replace(microsecond=0)
+          errors = []
+          mine = d.my_open_prs(real, cfg, now, errors)
+          new, recent, complete = d.activity_on_mine(real, cfg, datetime(2026,10,15,8,49,39,tzinfo=timezone.utc),
+                                                     errors, recent_since=now - timedelta(days=7), now=now)
+          print("## scope terms:", d._repo_scope(cfg).split())
+          print("## my_open_prs:", [(i.key, i.detail) for i in mine])
+          print("## activity new:", [(i.key, i.detail) for i in new])
+          print("## activity recent:", [i.key for i in recent], "complete:", complete)
+          print("## errors:", errors)
+          print("## raw searches:")
+          for url, total, inc, items in log:
+              print("-", url.split("?",1)[1][:300], "| total", total, "| incomplete", inc, "|", items)
+          PY
+          cat out.md
+      - name: Publish result as a check run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -c "import json;print(json.dumps({'name':'search-probe','head_sha':'${{ github.sha }}','status':'completed','conclusion':'neutral','output':{'title':'search probe','summary':open('out.md').read()[:60000]}}))" > payload.json
+          gh api repos/${{ github.repository }}/check-runs --input payload.json > /dev/null
