@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
   issues: write   # only for the board issue in this repo
+  # Read-only. Without it, GitHub's search leaves pull requests out of the results for this
+  # token, so activity on your PRs and the Your open PRs list would come back empty.
+  pull-requests: read
 
 concurrency:
   group: digest
