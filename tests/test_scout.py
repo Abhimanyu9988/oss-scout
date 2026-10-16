@@ -139,9 +139,10 @@ class DigestTest(unittest.TestCase):
         self.assertEqual(state["seen"]["review_queue"], [f"{REPO}#51224", f"{REPO}#51700"])
         self.assertEqual(sorted(gh.review_calls), [51224, 51300, 51700])
         self.assertFalse(any("review:none label:" in q for q in gh.queries))     # no per-label searches
-        self.assertEqual(len(gh.queries), 7)  # your open PRs, activity on your threads, review
-        #                                     requests, thread follow-ups, your waiting PRs, new
-        #                                     issues in your areas, threads waiting on others
+        self.assertEqual(len(gh.queries), 8)  # your open PRs, activity on your threads (PRs, then
+        #                                     issues), review requests, thread follow-ups, your
+        #                                     waiting PRs, new issues in your areas, threads
+        #                                     waiting on others
 
     def test_reported_prs_are_not_rechecked(self):
         _, state = build_digest(world(), CFG, {}, NOW)
@@ -296,7 +297,9 @@ class DiscoveryTest(unittest.TestCase):
         # One activity search per organisation: a combined query over several large orgs is
         # the kind GitHub cuts short.
         activity = [q for q in gh.queries if "involves:" in q and "updated:>=2026-09-30T" in q]
-        self.assertEqual([q.rsplit(" ", 1)[1] for q in activity], ["org:open-telemetry", "org:kubernetes"])
+        self.assertEqual([(q.split()[1], q.rsplit(" ", 1)[1]) for q in activity],
+                         [("is:pr", "org:open-telemetry"), ("is:issue", "org:open-telemetry"),
+                          ("is:pr", "org:kubernetes"), ("is:issue", "org:kubernetes")])
         self.assertFalse(any("repo:open-telemetry/" in q for q in activity))   # covered by the org already
         follow = next(q for q in gh.queries if "involves:" in q and "is:issue is:open" in q)
         self.assertIn("org:open-telemetry org:kubernetes", follow)
@@ -506,7 +509,7 @@ class MissedActivityTest(unittest.TestCase):
         gh.incomplete = {"involves:"}
         digest, state = build_digest(gh, CFG, dict(self.STATE), self.DAY2)
         self.assertEqual(digest.needs_you, [])
-        self.assertTrue(any("incomplete results" in e for e in digest.errors))
+        self.assertTrue(any("incomplete or mixed-up results" in e for e in digest.errors))
         self.assertFalse(digest.is_empty())                       # the comment says the scan was partial
         self.assertEqual(state["activity_since"], "2026-10-15T08:49:39Z")   # not moved past it
         digest, state = build_digest(self.world(), CFG, state, self.DAY3)

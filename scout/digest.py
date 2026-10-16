@@ -130,31 +130,34 @@ def activity_on_mine(gh, cfg, since, errors, recent_since=None, now=None):
     `complete` is False when any search or timeline came back short, so the caller doesn't
     move `since` past events it never saw.
 
-    One search per organisation or repo: a single query across several large organisations
-    is the kind GitHub cuts short."""
+    One search per organisation or repo, and per type: a single query across several large
+    organisations is the kind GitHub cuts short, and asking for issues and PRs separately means
+    a search that silently comes back with issues only is noticed instead of trusted."""
     user = cfg["github_user"]
     window = min(since, recent_since) if recent_since else since
     limit = cfg.get("activity_threads", 200)
     hits, complete, truncated = {}, True, 0
     for scope in _repo_scope(cfg).split():
-        q = f"involves:{user} updated:>={iso(window)} {scope}"
-        try:
-            # Newest first: without a sort, search ranks by relevance and a cut-off drops
-            # arbitrary threads, including ones with fresh reviews on your own PRs.
-            found = gh.search_issues(q, limit=limit, sort="updated")
-        except GitHubError as err:
-            errors.append(f"activity search ({scope}): {err}")
-            complete = False
-            continue
-        if getattr(gh, "last_incomplete", False):
-            errors.append(f"activity search ({scope}): GitHub returned incomplete results; "
-                          "the next run checks the same period again")
-            complete = False
-        total = getattr(gh, "last_total_count", None)
-        if total and total > len(found):
-            truncated = max(truncated, total)
-        for hit in found:
-            hits.setdefault(hit["html_url"], hit)
+        for kind in ("is:pr", "is:issue"):
+            q = f"involves:{user} {kind} updated:>={iso(window)} {scope}"
+            label = f"{scope}, {kind[3:]}s"
+            try:
+                # Newest first: without a sort, search ranks by relevance and a cut-off drops
+                # arbitrary threads, including ones with fresh reviews on your own PRs.
+                found = gh.search_issues(q, limit=limit, sort="updated")
+            except GitHubError as err:
+                errors.append(f"activity search ({label}): {err}")
+                complete = False
+                continue
+            if getattr(gh, "last_incomplete", False):
+                errors.append(f"activity search ({label}): GitHub returned incomplete or mixed-up results; "
+                              "the next run checks the same period again")
+                complete = False
+            total = getattr(gh, "last_total_count", None)
+            if total and total > len(found):
+                truncated = max(truncated, total)
+            for hit in found:
+                hits.setdefault(hit["html_url"], hit)
     if truncated:
         errors.append(f"activity search: {truncated} threads changed since the last run, only the "
                       f"{limit} most recent were checked (raise activity_threads)")
@@ -216,7 +219,7 @@ def my_open_prs(gh, cfg, now, errors):
         errors.append(f"your open PRs: {err}")
         return []
     if getattr(gh, "last_incomplete", False):
-        errors.append("your open PRs: GitHub returned incomplete results, the list may be short")
+        errors.append("your open PRs: GitHub returned incomplete or mixed-up results, the list may be short")
     out = []
     for p in found:
         repo = "/".join(p["repository_url"].rstrip("/").split("/")[-2:])

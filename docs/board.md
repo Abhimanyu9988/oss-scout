@@ -55,9 +55,10 @@ what's new in the sections above, plus comments, reviews, merges and closes on a
 is announced once; quiet days get no comment.
 
 GitHub's search gives up on a query that runs too long and returns what it found so far, sometimes nothing, without
-an error. oss-scout retries such a search once, searches each organisation separately so each query stays small,
-and if a result is still incomplete it says so in the comment and checks the same period again on the next run
-rather than moving past it. To catch up by hand after a missed day, run the workflow from the Actions tab with
+an error, and it has been seen answering an `is:pr` query with issues only. oss-scout searches each organisation
+separately and asks for PRs and issues in separate queries, checks every result is the type it asked for, and
+retries a short or mixed-up answer once. If it is still wrong, the comment says so and the next run checks the same
+period again rather than moving past it. To catch up by hand after a missed day, run the workflow from the Actions tab with
 **activity_since** set to a UTC time such as `2026-10-15T08:00:00Z` (or `--activity-since` on the command line).
 
 When a new section appears after an upgrade, the first run records what's in it without announcing it, so you don't

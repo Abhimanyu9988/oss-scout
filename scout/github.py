@@ -194,11 +194,18 @@ class GitHub:
         """Issue/PR search. Paced to stay under the 30 requests/minute search limit.
 
         GitHub stops a search that runs too long and returns what it found so far, possibly
-        nothing, with `incomplete_results: true` and no error. That is retried once; if it is
-        still incomplete, `last_incomplete` is set so callers can say so instead of trusting
-        a short list."""
+        nothing, with `incomplete_results: true` and no error. It has also been seen answering
+        an `is:pr` query with issues only. Either is retried once; if it persists, items of the
+        wrong type are dropped and `last_incomplete` is set so callers can say so instead of
+        trusting a short list."""
+        terms = query.lower().split()
+        want = "pr" if "is:pr" in terms else "issue" if "is:issue" in terms else None
         for attempt in range(2):
             items, incomplete = self._search_once(query, limit, sort)
+            if want:
+                right = [i for i in items if ("pull_request" in i) == (want == "pr")]
+                if len(right) != len(items):
+                    incomplete, items = True, right
             if not incomplete:
                 break
         self.last_incomplete = incomplete

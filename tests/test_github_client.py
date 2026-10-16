@@ -48,6 +48,10 @@ class Handler(BaseHTTPRequestHandler):
                 if Handler.slow_calls == 1:
                     return self._send(200, {"total_count": 0, "incomplete_results": True, "items": []})
                 return self._send(200, {"total_count": 1, "incomplete_results": False, "items": [{"number": 11}]})
+            if "issues-only" in query:
+                # Seen on 16 Oct 2026: an is:pr query answered with issues, nothing flagged.
+                return self._send(200, {"total_count": 2, "incomplete_results": False,
+                                        "items": [{"number": 21}, {"number": 22, "pull_request": {}}]})
             if "always-slow" in query:
                 return self._send(200, {"total_count": 0, "incomplete_results": True, "items": []})
             return self._send(200, {"items": [{"number": 9}]})
@@ -134,11 +138,20 @@ class ClientTest(unittest.TestCase):
         self.assertLess(len(str(ctx.exception)), 250)
 
     def test_search(self):
-        self.assertEqual(self.gh.search_issues("is:pr")[0]["number"], 9)
+        self.assertEqual(self.gh.search_issues("author:me")[0]["number"], 9)
         self.assertFalse(self.gh.last_incomplete)
 
     def test_search_cut_short_by_github_is_retried(self):
         self.assertEqual([i["number"] for i in self.gh.search_issues("slow-once")], [11])
+        self.assertFalse(self.gh.last_incomplete)
+
+    def test_wrong_type_results_are_dropped_and_flagged(self):
+        before = sum(1 for c in Handler.calls if c[0] == "/search/issues")
+        self.assertEqual([i["number"] for i in self.gh.search_issues("is:pr issues-only")], [22])
+        self.assertTrue(self.gh.last_incomplete)
+        self.assertEqual(sum(1 for c in Handler.calls if c[0] == "/search/issues") - before, 2)   # one retry
+        self.assertEqual([i["number"] for i in self.gh.search_issues("is:issue issues-only")], [21])
+        self.assertEqual([i["number"] for i in self.gh.search_issues("issues-only")], [21, 22])   # no type asked
         self.assertFalse(self.gh.last_incomplete)
 
     def test_search_still_cut_short_is_flagged_not_trusted(self):
