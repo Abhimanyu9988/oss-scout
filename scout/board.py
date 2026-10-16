@@ -7,8 +7,12 @@ you carries the day's news, so it reaches the GitHub app and your email.
 Two things keep the board polite if the repo is public:
 - links go through redirect.github.com, which (as Dependabot does) avoids leaving a
   "mentioned this issue" note on every upstream issue;
-- '@' in titles is neutralised so the board never pings anyone but you.
+- '@' in titles is neutralised so the board never pings anyone but you;
+- issue references in text (owner/repo#123, #123) are broken up, since GitHub would link them
+  and leave the same note.
 """
+
+import re
 
 LABEL = "oss-scout"
 LABEL_COLOR = "0e8a16"
@@ -23,8 +27,18 @@ def quiet_link(url):
     return url.replace("https://github.com/", "https://redirect.github.com/", 1)
 
 
+# owner/repo#123, owner#123 or a bare #123. GitHub turns these into links, and a link from an issue
+# or comment puts a "mentioned this" event on the issue it points to, so in the board they're
+# broken with a zero-width space. A bare #123 would also point at this repo, not the upstream one.
+REF_RE = re.compile(r"(?<![\w&])((?:[\w.-]+(?:/[\w.-]+)?)?#)(\d+)")
+ZWSP = "​"
+
+
 def safe(text):
-    return text.replace("@", "@​").replace("\n", " ")
+    """Text for the board and its comments that pings nobody and links nowhere upstream."""
+    text = text.replace("https://github.com/", "https://redirect.github.com/")
+    text = REF_RE.sub(lambda m: m.group(1) + ZWSP + m.group(2), text)
+    return text.replace("@", "@" + ZWSP).replace("\n", " ")
 
 
 def _ref(key):

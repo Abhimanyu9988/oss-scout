@@ -25,6 +25,28 @@ def baseline():
     return build_digest(gh, CFG, {}, NOW)
 
 
+class NoBacklinksTest(unittest.TestCase):
+    """16 Oct 2026: a comment's error line read 'open-telemetry/opentelemetry-helm-charts#2468
+    reviews: HTTP 404', GitHub linked it, and the upstream issue got 'github-actions mentioned
+    this' pointing at the board."""
+
+    def test_comment_and_board_link_no_upstream_issue(self):
+        from scout.digest import Item
+        digest, _ = baseline()
+        digest.needs_you.append(Item(f"{REPO}#51946", f"https://github.com/{REPO}/issues/51946",
+                                     "Fixes #123, see https://github.com/o/r/pull/9",
+                                     "PR open-telemetry/opentelemetry-collector-contrib#51947 open; "
+                                     "earlier PR merged (#50665 #6)"))
+        digest.errors.append("open-telemetry/opentelemetry-helm-charts#2468 reviews: HTTP 404")
+        ref = re.compile(r"(?<![\w&])(?:[\w.-]+(?:/[\w.-]+)?)?#\d")
+        for body in (board.render_comment(digest, CFG, NOW), board.render_board(digest, CFG, NOW, HOME)):
+            body = re.sub(r"`[^`]*`", "", body)              # GitHub doesn't link inside code
+            self.assertIsNone(ref.search(body), ref.search(body) and body[ref.search(body).start() - 40:][:80])
+            self.assertNotIn("https://github.com/o/", body)
+            self.assertNotIn(f"https://github.com/{REPO}/issues", body)
+        self.assertIn("#\u200b2468", board.render_comment(digest, CFG, NOW))   # still readable
+
+
 class RenderTest(unittest.TestCase):
     def test_board_lists_everything_politely(self):
         digest, _ = baseline()
