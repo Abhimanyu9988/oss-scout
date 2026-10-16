@@ -42,6 +42,7 @@ class GitHub:
         self._search_interval = search_interval
         self._last_search = 0.0
         self.last_total_count = None   # total_count of the latest search_issues call
+        self.last_incomplete = False   # GitHub cut the latest search_issues call short
 
     def _get(self, url):
         return self._request(url)
@@ -190,12 +191,26 @@ class GitHub:
         return events
 
     def search_issues(self, query, limit=100, sort=None):
-        """Issue/PR search. Paced to stay under the 30 requests/minute search limit."""
+        """Issue/PR search. Paced to stay under the 30 requests/minute search limit.
+
+        GitHub stops a search that runs too long and returns what it found so far, possibly
+        nothing, with `incomplete_results: true` and no error. That is retried once; if it is
+        still incomplete, `last_incomplete` is set so callers can say so instead of trusting
+        a short list."""
+        for attempt in range(2):
+            items, incomplete = self._search_once(query, limit, sort)
+            if not incomplete:
+                break
+        self.last_incomplete = incomplete
+        return items
+
+    def _search_once(self, query, limit, sort):
         gap = self._search_interval - (time.monotonic() - self._last_search)
         if gap > 0:
             self._sleep(gap)
         self._last_search = time.monotonic()
         items = []
+        incomplete = False
         params = {"q": query, "per_page": 100}
         if sort:
             params.update(sort=sort, order="desc")
@@ -204,10 +219,11 @@ class GitHub:
         for page in self._pages("/search/issues", params, max_pages=max(1, min(10, -(-limit // 100)))):
             if self.last_total_count is None:
                 self.last_total_count = page.get("total_count")
+            incomplete = incomplete or bool(page.get("incomplete_results"))
             items.extend(page.get("items", []))
             if len(items) >= limit:
                 break
-        return items[:limit]
+        return items[:limit], incomplete
 
 
 def _retry_wait(err, body=""):

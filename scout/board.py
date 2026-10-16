@@ -65,6 +65,9 @@ def summary_line(digest):
     needs = (len(digest.board_followups) + len(digest.board_my_waiting) + len(digest.board_my_claims)
              + len(digest.board_waiting))
     bits = [f"**{needs} need{'s' if needs == 1 else ''} you**"]
+    if digest.board_activity:
+        bits.append(f"{len(digest.board_activity)} active thread{'s' if len(digest.board_activity) != 1 else ''}")
+    bits.append(f"{len(digest.board_mine)} open PR{'s' if len(digest.board_mine) != 1 else ''} of yours")
     if digest.board_triage:
         no_reply = digest.counts.get("no_reply", 0)
         bits.append(f"{len(digest.board_triage)} to triage ({no_reply} with no reply)")
@@ -108,6 +111,10 @@ def render_board(digest, cfg, now, home_repo=None):
             bits.append("unlabelled ones mentioning " + safe(", ".join(t["keywords"])))
         lines += ["Triage also covers " + " and ".join(bits) + ".", ""]
     lines += [summary_line(digest), "", "## Needs you", ""]
+    days = cfg.get("activity_days", 7)
+    lines += _section(f"Activity on your threads, last {days} days", digest.board_activity,
+                      empty=f"Nobody else has posted on your threads in the last {days} days.")
+    lines += _section("Your open PRs", digest.board_mine, empty="You have no open PRs here.")
     lines += _section("PRs to review on threads you're in", digest.board_followups,
                       empty="Nothing waiting for you.")
     lines += _section(f"Your PRs with no review after {cfg.get('ping_after_days', 7)}+ days", digest.board_my_waiting,

@@ -6,6 +6,12 @@ One issue in your own repository, rebuilt every run. Sections:
 
 **Needs you**
 
+- **Activity on your threads, last 7 days:** every issue or PR you're involved in (author, commenter, mentioned or
+  assigned) where someone else commented, reviewed, merged or closed in the last week, newest first, with who did
+  what. This is rebuilt every run, so it doesn't depend on the daily comment having reached you.
+- **Your open PRs:** every open PR you authored, with where its reviews stand: who approved, who requested changes,
+  or how long it has waited for a first review. A later comment doesn't undo someone's approval; bots and your own
+  replies don't count.
 - **PRs to review on threads you're in:** someone opened a PR linked to an issue you opened or commented on, and you
   haven't reviewed it. Drafts are included and marked. If you said you'd review it, the item says so. It stays until
   you review it or the PR closes.
@@ -47,6 +53,12 @@ One issue in your own repository, rebuilt every run. Sections:
 When something changes, a comment on the board mentions you, so it reaches the GitHub app and your email. It covers
 what's new in the sections above, plus comments, reviews, merges and closes on anything you're involved in. Each item
 is announced once; quiet days get no comment.
+
+GitHub's search gives up on a query that runs too long and returns what it found so far, sometimes nothing, without
+an error. oss-scout retries such a search once, searches each organisation separately so each query stays small,
+and if a result is still incomplete it says so in the comment and checks the same period again on the next run
+rather than moving past it. To catch up by hand after a missed day, run the workflow from the Actions tab with
+**activity_since** set to a UTC time such as `2026-10-15T08:00:00Z` (or `--activity-since` on the command line).
 
 When a new section appears after an upgrade, the first run records what's in it without announcing it, so you don't
 get a flood of old items as "new".
@@ -178,6 +190,8 @@ since the last one, so this stays within GitHub's rate limits.
 | `followup_days` | 60 | How far back to look for issues you're involved in |
 | `followup_threads` | 40 | Cap on those issues checked per run |
 | `activity_threads` | 200 | Cap on threads checked for new activity since the last run, newest first; a run that hits it says so in a Partial scan note |
+| `activity_days` | 7 | How far back the board's Activity on your threads section goes |
+| `my_prs_limit` | 50 | Cap on PRs listed under Your open PRs |
 | `max_issues_per_label` | 60 | Cap on issues read per label |
 | `ping_after_days` | 7 | When your own unreviewed PR shows up under Needs you |
 | `claim_reminder_days` | 14 | When an issue you claimed without a PR shows up |

@@ -38,6 +38,8 @@ class Digest:
     triage: list = field(default_factory=list)             # ...the ones opened since the last run
     board_waiting: list = field(default_factory=list)      # threads where you spoke last and nobody replied
     board_aside: list = field(default_factory=list)        # free by the rules, but the AI check says not to start
+    board_mine: list = field(default_factory=list)         # every open PR you authored, with review status
+    board_activity: list = field(default_factory=list)     # threads you're in with activity by others lately
     hidden: list = field(default_factory=list)             # keys you hid with /hide on the board issue
 
     def is_empty(self):
@@ -120,34 +122,137 @@ def unreviewed_prs(gh, cfg, now, prs, already_reported, errors):
     return found
 
 
-def activity_on_mine(gh, cfg, since, errors):
-    """What other people did on issues/PRs you're involved in since the last run."""
+def activity_on_mine(gh, cfg, since, errors, recent_since=None, now=None):
+    """What other people did on issues/PRs you're involved in.
+
+    Returns (new, recent, complete): `new` is what happened after `since` (for today's
+    comment), `recent` is everything after `recent_since` (for the always-current board), and
+    `complete` is False when any search or timeline came back short, so the caller doesn't
+    move `since` past events it never saw.
+
+    One search per organisation or repo: a single query across several large organisations
+    is the kind GitHub cuts short."""
     user = cfg["github_user"]
-    q = f"involves:{user} updated:>={iso(since)} {_repo_scope(cfg)}"
+    window = min(since, recent_since) if recent_since else since
     limit = cfg.get("activity_threads", 200)
-    try:
-        # Newest first: without a sort, search ranks by relevance and a cut-off drops
-        # arbitrary threads, including ones with fresh reviews on your own PRs.
-        hits = gh.search_issues(q, limit=limit, sort="updated")
-    except GitHubError as err:
-        errors.append(f"activity search: {err}")
-        return []
-    total = getattr(gh, "last_total_count", None)
-    if total and total > len(hits):
-        errors.append(f"activity search: {total} threads changed since the last run, only the "
-                      f"{len(hits)} most recent were checked (raise activity_threads)")
-    lines = []
-    for hit in hits:
+    hits, complete, truncated = {}, True, 0
+    for scope in _repo_scope(cfg).split():
+        q = f"involves:{user} updated:>={iso(window)} {scope}"
+        try:
+            # Newest first: without a sort, search ranks by relevance and a cut-off drops
+            # arbitrary threads, including ones with fresh reviews on your own PRs.
+            found = gh.search_issues(q, limit=limit, sort="updated")
+        except GitHubError as err:
+            errors.append(f"activity search ({scope}): {err}")
+            complete = False
+            continue
+        if getattr(gh, "last_incomplete", False):
+            errors.append(f"activity search ({scope}): GitHub returned incomplete results; "
+                          "the next run checks the same period again")
+            complete = False
+        total = getattr(gh, "last_total_count", None)
+        if total and total > len(found):
+            truncated = max(truncated, total)
+        for hit in found:
+            hits.setdefault(hit["html_url"], hit)
+    if truncated:
+        errors.append(f"activity search: {truncated} threads changed since the last run, only the "
+                      f"{limit} most recent were checked (raise activity_threads)")
+    new, recent = [], []
+    for hit in hits.values():
         repo = "/".join(hit["repository_url"].rstrip("/").split("/")[-2:])
         try:
             events = gh.timeline(repo, hit["number"])
         except GitHubError as err:
             errors.append(f"{repo}#{hit['number']} timeline: {err}")
+            complete = False
             continue
+        key = f"{repo}#{hit['number']}"
         what = describe_events(events, user, since)
         if what:
-            lines.append(Item(f"{repo}#{hit['number']}", hit["html_url"], hit["title"], ", ".join(what)))
-    return lines
+            new.append(Item(key, hit["html_url"], hit["title"], ", ".join(what)))
+        if recent_since:
+            seen = describe_events(events, user, recent_since)
+            latest = latest_other_event(events, user, recent_since)
+            if seen and latest:
+                ago = f" · latest {_ago(latest, now)}" if now else ""
+                state = "" if hit.get("state", "open") == "open" else " · closed"
+                recent.append((latest, Item(key, hit["html_url"], hit["title"], ", ".join(seen) + ago + state)))
+    recent = [item for _, item in sorted(recent, key=lambda r: r[0], reverse=True)]
+    return new, recent, complete
+
+
+def latest_other_event(events, user, since):
+    """Time of the newest event by another human after `since`, or None."""
+    latest = None
+    for ev in events:
+        when = ev.get("submitted_at") or ev.get("created_at")
+        who = actor_of(ev)
+        if not when or not who or who.lower() == user.lower() or is_bot(who):
+            continue
+        t = parse_time(when)
+        if t > since and (latest is None or t > latest):
+            latest = t
+    return latest
+
+
+def _ago(then, now):
+    hours = int((now - then).total_seconds() // 3600)
+    if hours < 1:
+        return "under an hour ago"
+    if hours < 48:
+        return f"{hours}h ago"
+    return f"{hours // 24}d ago"
+
+
+def my_open_prs(gh, cfg, now, errors):
+    """Every open PR you authored in scope, with where its reviews stand."""
+    user = cfg["github_user"]
+    lo = user.lower()
+    q = f"is:pr is:open author:{user} {_repo_scope(cfg)}"
+    try:
+        found = gh.search_issues(q, limit=cfg.get("my_prs_limit", 50), sort="updated")
+    except GitHubError as err:
+        errors.append(f"your open PRs: {err}")
+        return []
+    if getattr(gh, "last_incomplete", False):
+        errors.append("your open PRs: GitHub returned incomplete results, the list may be short")
+    out = []
+    for p in found:
+        repo = "/".join(p["repository_url"].rstrip("/").split("/")[-2:])
+        try:
+            reviews = gh.pr_reviews(repo, p["number"]) or []
+        except GitHubError as err:
+            errors.append(f"{repo}#{p['number']} reviews: {err}")
+            reviews = None
+        bits = []
+        if p.get("draft"):
+            bits.append("draft")
+        if reviews is not None:
+            latest = {}
+            for r in reviews:
+                who = (r.get("user") or {}).get("login", "")
+                state = (r.get("state") or "").upper()
+                if not who or who.lower() == lo or is_bot(who) or state in ("", "PENDING"):
+                    continue
+                if state == "COMMENTED" and latest.get(who) in ("APPROVED", "CHANGES_REQUESTED"):
+                    continue                    # a later comment doesn't undo an approval
+                latest[who] = state
+            changes = sorted((w for w, s in latest.items() if s == "CHANGES_REQUESTED"), key=str.lower)
+            approved = sorted((w for w, s in latest.items() if s == "APPROVED"), key=str.lower)
+            commented = sorted((w for w, s in latest.items() if s == "COMMENTED"), key=str.lower)
+            if changes:
+                bits.append("changes requested by " + ", ".join(changes))
+            if approved:
+                bits.append("approved by " + ", ".join(approved))
+            if commented and not (changes or approved):
+                bits.append("reviewed by " + ", ".join(commented))
+            if not latest:
+                created = p.get("created_at")
+                bits.append(f"no review yet, opened {days_between(created, now)}d ago" if created
+                            else "no review yet")
+        out.append(Item(f"{repo}#{p['number']}", p["html_url"], p["title"], " · ".join(bits)))
+    return out
 
 
 OFFER_RE = re.compile(r"\b(?:happy|glad|willing|keen) to (?:help )?review|\bi(?:'ll| will| can| could) review|"
@@ -596,13 +701,28 @@ def describe_events(events, user, since):
     return phrases
 
 
-def build_digest(gh, cfg, state, now, judge=None):
+def build_digest(gh, cfg, state, now, judge=None, activity_since=None):
     """Returns (digest, new_state). On the first run it records a baseline instead of
-    reporting everything as new."""
+    reporting everything as new. `activity_since` overrides where the activity check starts,
+    to catch up after a missed day."""
     digest = Digest()
     errors = digest.errors
     seen = state.get("seen", {})
     first_run = not state.get("last_run")
+    recent_since = now - timedelta(days=cfg.get("activity_days", 7))
+    if activity_since is not None:
+        since = activity_since
+    elif first_run:
+        since = now
+    else:
+        # Starts where the last *complete* activity check ended, never further back than the
+        # board's window: a scan GitHub cut short is repeated rather than skipped.
+        last_run = parse_time(state["last_run"])
+        resume = parse_time(state["activity_since"]) if state.get("activity_since") else last_run
+        since = max(min(resume, last_run), recent_since)
+    digest.board_mine = my_open_prs(gh, cfg, now, errors)
+    new_activity, digest.board_activity, activity_complete = activity_on_mine(
+        gh, cfg, since, errors, recent_since=recent_since, now=now)
 
     prs = {}
     cands = scan_candidates(gh, cfg, now, errors, prs)
@@ -659,8 +779,7 @@ def build_digest(gh, cfg, state, now, judge=None):
         top = sorted(free.values(), key=lambda c: c.updated_at, reverse=True)[:3]
         digest.to_pick = [_cand_item(c, "free") for c in top]
     else:
-        since = parse_time(state["last_run"])
-        digest.needs_you.extend(activity_on_mine(gh, cfg, since, errors))
+        digest.needs_you.extend(new_activity)
         digest.to_pick = (
             [_cand_item(c, "free") for k, c in free.items() if k not in seen.get("free", [])]
             + [_cand_item(c, "quiet") for k, c in quiet.items() if k not in seen.get("quiet", [])]
@@ -706,6 +825,7 @@ def build_digest(gh, cfg, state, now, judge=None):
 
     new_state = {
         "last_run": iso(now),
+        "activity_since": iso(now) if (activity_complete or first_run) else iso(since),
         "seen": {
             "free": merged("free", free),
             "quiet": merged("quiet", quiet),

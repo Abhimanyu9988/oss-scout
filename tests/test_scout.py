@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fake import REPO, FakeGitHub, comment, issue, pr, xref  # noqa: E402
-from scout import slack  # noqa: E402
+from scout import board, slack  # noqa: E402
 from scout.classify import Candidate, classify  # noqa: E402
 from scout.cli import main  # noqa: E402
 from scout.digest import build_digest, describe_events  # noqa: E402
@@ -130,15 +130,18 @@ class DigestTest(unittest.TestCase):
         self.assertEqual([i.key for i in digest.to_pick], [f"{REPO}#51856"])
         self.assertEqual([i.key for i in digest.needs_you], [f"{REPO}#51999"])
         self.assertEqual(digest.review_queue, [])
-        # No "what happened since the last run" search on the first run (follow-ups and
-        # waiting-on-others look at open threads, which is fine).
-        self.assertFalse(any("involves:" in q and "is:open" not in q for q in gh.queries))
+        # The first run doesn't announce past activity in the comment, but the board still
+        # shows the last week of it.
+        self.assertNotIn(f"{REPO}#51657", [i.key for i in digest.needs_you])
+        self.assertEqual([i.key for i in digest.board_activity], [f"{REPO}#51657"])
+        self.assertEqual(state["activity_since"], "2026-10-07T07:00:00Z")
         self.assertEqual(state["seen"]["quiet"], [f"{REPO}#47988"])
         self.assertEqual(state["seen"]["review_queue"], [f"{REPO}#51224", f"{REPO}#51700"])
         self.assertEqual(sorted(gh.review_calls), [51224, 51300, 51700])
         self.assertFalse(any("review:none label:" in q for q in gh.queries))     # no per-label searches
-        self.assertEqual(len(gh.queries), 5)  # review requests, thread follow-ups, your waiting PRs,
-        #                                     new issues in your areas, threads waiting on others
+        self.assertEqual(len(gh.queries), 7)  # your open PRs, activity on your threads, review
+        #                                     requests, thread follow-ups, your waiting PRs, new
+        #                                     issues in your areas, threads waiting on others
 
     def test_reported_prs_are_not_rechecked(self):
         _, state = build_digest(world(), CFG, {}, NOW)
@@ -290,9 +293,13 @@ class DiscoveryTest(unittest.TestCase):
     def test_scope_includes_orgs_for_your_threads(self):
         gh = self.world()
         build_digest(gh, self.D, {}, NOW)
-        q = next(q for q in gh.queries if "involves:" in q)
-        self.assertIn("org:open-telemetry org:kubernetes", q)
-        self.assertNotIn("repo:open-telemetry/", q)               # covered by the org already
+        # One activity search per organisation: a combined query over several large orgs is
+        # the kind GitHub cuts short.
+        activity = [q for q in gh.queries if "involves:" in q and "updated:>=2026-09-30T" in q]
+        self.assertEqual([q.rsplit(" ", 1)[1] for q in activity], ["org:open-telemetry", "org:kubernetes"])
+        self.assertFalse(any("repo:open-telemetry/" in q for q in activity))   # covered by the org already
+        follow = next(q for q in gh.queries if "involves:" in q and "is:issue is:open" in q)
+        self.assertIn("org:open-telemetry org:kubernetes", follow)
 
 
 class RepoWithoutLabelsTest(unittest.TestCase):
@@ -464,3 +471,76 @@ class AuthorPlanTest(unittest.TestCase):
 
     def test_your_own_plan_is_mine(self):
         self.assertEqual(self.run_issue("I will implement this", author=USER).bucket, "mine")
+
+
+class MissedActivityTest(unittest.TestCase):
+    """15-16 Oct 2026: dashpole approved #4158 between runs, GitHub's search came back empty
+    with incomplete_results set and no error, and the run said "Nothing new today"."""
+
+    APPROVED = "2026-10-15T19:52:00Z"
+
+    def world(self):
+        mine = dict(pr(4158, "[k8s] Add Pod level memory limit and request metrics", USER,
+                       created="2026-10-01T10:00:00Z"), updated_at=self.APPROVED)
+        timelines = {4158: [{"event": "reviewed", "user": {"login": "TylerHelmuth"}, "state": "approved",
+                             "submitted_at": "2026-10-13T12:00:00Z"},
+                            {"event": "reviewed", "user": {"login": "dashpole"}, "state": "approved",
+                             "submitted_at": self.APPROVED}]}
+        reviews = {4158: [{"user": {"login": "ChrsMark"}, "state": "COMMENTED"},
+                          {"user": {"login": "ChrsMark"}, "state": "APPROVED"},
+                          {"user": {"login": "TylerHelmuth"}, "state": "APPROVED"},
+                          {"user": {"login": "dashpole"}, "state": "APPROVED"},
+                          {"user": {"login": "copilot-pull-request-reviewer[bot]"}, "state": "COMMENTED"},
+                          {"user": {"login": USER}, "state": "COMMENTED"}]}
+        searches = [("involves:", [mine]), ("is:pr is:open author:", [mine])]
+        return FakeGitHub({}, timelines, searches, {}, reviews)
+
+    STATE = {"last_run": "2026-10-15T08:49:39Z", "activity_since": "2026-10-15T08:49:39Z",
+             "seen": {"free": [], "quiet": [], "review_queue": [], "followups": [], "my_waiting": [],
+                      "my_claims": [], "discovered": [], "triage": [], "waiting": []}}
+    DAY2 = datetime(2026, 10, 16, 7, 4, tzinfo=timezone.utc)
+    DAY3 = datetime(2026, 10, 17, 7, 4, tzinfo=timezone.utc)
+
+    def test_a_search_github_cut_short_is_repeated_not_skipped(self):
+        gh = self.world()
+        gh.incomplete = {"involves:"}
+        digest, state = build_digest(gh, CFG, dict(self.STATE), self.DAY2)
+        self.assertEqual(digest.needs_you, [])
+        self.assertTrue(any("incomplete results" in e for e in digest.errors))
+        self.assertFalse(digest.is_empty())                       # the comment says the scan was partial
+        self.assertEqual(state["activity_since"], "2026-10-15T08:49:39Z")   # not moved past it
+        digest, state = build_digest(self.world(), CFG, state, self.DAY3)
+        self.assertEqual([(i.key, i.detail) for i in digest.needs_you], [(f"{REPO}#4158", "dashpole approved")])
+        self.assertEqual(state["activity_since"], "2026-10-17T07:04:00Z")
+
+    def test_board_shows_your_prs_and_recent_activity_whatever_the_comment_said(self):
+        digest, _ = build_digest(self.world(), CFG, dict(self.STATE), self.DAY2)
+        self.assertEqual([(i.key, i.detail) for i in digest.board_mine],
+                         [(f"{REPO}#4158", "approved by ChrsMark, dashpole, TylerHelmuth")])
+        self.assertEqual([(i.key, i.detail) for i in digest.board_activity],
+                         [(f"{REPO}#4158", "TylerHelmuth approved, dashpole approved · latest 11h ago")])
+        body = board.render_board(digest, CFG, self.DAY2)
+        self.assertIn("### Activity on your threads, last 7 days (1)", body)
+        self.assertIn("### Your open PRs (1)", body)
+        self.assertIn("1 active thread · 1 open PR of yours", body)
+
+    def test_catch_up_from_a_given_time(self):
+        state = dict(self.STATE, last_run="2026-10-16T07:04:00Z", activity_since="2026-10-16T07:04:00Z")
+        digest, _ = build_digest(self.world(), CFG, state, self.DAY3)
+        self.assertEqual(digest.needs_you, [])                    # the approval was before the last run
+        digest, _ = build_digest(self.world(), CFG, state, self.DAY3,
+                                 activity_since=datetime(2026, 10, 15, 8, 49, 39, tzinfo=timezone.utc))
+        self.assertEqual([i.detail for i in digest.needs_you], ["dashpole approved"])
+
+    def test_review_states(self):
+        from scout.digest import my_open_prs
+        gh = self.world()
+        gh.reviews[4158] = [{"user": {"login": "a"}, "state": "APPROVED"},
+                            {"user": {"login": "a"}, "state": "COMMENTED"},          # still approved
+                            {"user": {"login": "b"}, "state": "APPROVED"},
+                            {"user": {"login": "b"}, "state": "CHANGES_REQUESTED"},  # latest counts
+                            {"user": {"login": "c"}, "state": "PENDING"}]
+        self.assertEqual(my_open_prs(gh, CFG, self.DAY2, [])[0].detail,
+                         "changes requested by b · approved by a")
+        gh.reviews[4158] = []
+        self.assertEqual(my_open_prs(gh, CFG, self.DAY2, [])[0].detail, "no review yet, opened 14d ago")

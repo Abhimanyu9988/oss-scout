@@ -10,6 +10,10 @@ on:
         description: "Print to the job summary instead of posting"
         type: boolean
         default: false
+      activity_since:
+        description: "Re-check activity on your threads from this UTC time (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ), to catch up after a missed day"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -44,6 +48,7 @@ jobs:
           SCOUT_WRITE_TOKEN: ${{ github.token }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SCOUT_ACTIVITY_SINCE: ${{ inputs.activity_since }}
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             python -m scout digest --dry-run --no-save
