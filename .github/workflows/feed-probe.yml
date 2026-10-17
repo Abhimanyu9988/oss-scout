@@ -3,12 +3,14 @@ on:
   push:
     branches: [feed-probe]
 permissions:
-  contents: read
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
       - run: |
+          exec > probe-results.txt 2>&1
           for u in \
             "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_msgs.xml" \
             "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_topics.xml" \
@@ -23,3 +25,9 @@ jobs:
             head -c 400 out.txt | tr '\n' ' '; echo
             grep -o -i "<title>[^<]*shadow[^<]*</title>" out.txt | head -5
           done
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add probe-results.txt
+          git commit -m "Probe results"
+          git push
