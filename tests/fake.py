@@ -32,10 +32,15 @@ def xref(n, state, repo=REPO, merged=False):
 class FakeWriter:
     """Records writes to the board repo."""
 
-    def __init__(self, existing=None, fail=False):
+    def __init__(self, existing=None, fail=False, watch_issues=None):
         self.existing = existing
         self.fail = fail
         self.calls = []
+        self.watch_issues = watch_issues or []
+
+    def open_issues(self, repo, label):
+        self.calls.append(("list", label))
+        return self.watch_issues
 
     def find_open_issue(self, repo, label):
         self.calls.append(("find", repo, label))
@@ -81,6 +86,10 @@ class FakeGitHub:
         self.totals = {}                 # needle -> total_count to report for that search
         self.incomplete = set()          # needles whose searches GitHub "times out" on
         self.last_incomplete = False
+        self.paths = set()               # "owner/repo/path" entries that exist
+
+    def path_exists(self, repo, path):
+        return f"{repo}/{path}" in self.paths
 
     def open_items(self, repo, label, limit=60):
         return self.issues_by_label.get(label, [])[:limit], self.prs_by_label.get(label, [])

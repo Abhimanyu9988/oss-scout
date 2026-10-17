@@ -74,11 +74,39 @@ def _collapsed(heading, items, limit, empty="Nothing right now."):
     return lines + ["", "</details>", ""]
 
 
+def _watch_line(hit):
+    when = f" · {hit.when}" if hit.when else ""
+    # Feed titles are written by anyone who can post there: brackets can't close the link early.
+    title = safe(hit.title).replace("[", "(").replace("]", ")")
+    return f"- [{title}]({quiet_link(hit.url)}) — {safe(hit.source)}{when}"
+
+
+def render_watches(digest):
+    """The Watching section: every active watch, with what it has found so far."""
+    if not digest.watches:
+        return []
+    lines = ["## Watching", ""]
+    for res in digest.watches:
+        until = f" (until {res.until})" if res.until else ""
+        lines += [f"### {safe(res.name)}{until}", ""]
+        if res.issue_url:
+            lines += [f"Anyone can follow this watch: [subscribe to its issue]({res.issue_url}).", ""]
+        if res.note:
+            lines += [f"_{safe(res.note)}_", ""]
+        lines += [_watch_line(h) for h in res.hits] or ["_Nothing yet._"]
+        lines += [f"- _Couldn't check {safe(err[:200])}_" for err in res.errors]
+        lines.append("")
+    return lines
+
+
 def summary_line(digest):
     """One line that says at a glance whether there's anything to open."""
     needs = (len(digest.board_followups) + len(digest.board_my_waiting) + len(digest.board_my_claims)
              + len(digest.board_waiting))
     bits = [f"**{needs} need{'s' if needs == 1 else ''} you**"]
+    hits = sum(len(res.hits) for res in digest.watches)
+    if hits:
+        bits.insert(0, f"**{hits} watch hit{'s' if hits != 1 else ''}**")
     if digest.board_activity:
         bits.append(f"{len(digest.board_activity)} active thread{'s' if len(digest.board_activity) != 1 else ''}")
     bits.append(f"{len(digest.board_mine)} open PR{'s' if len(digest.board_mine) != 1 else ''} of yours")
@@ -124,7 +152,9 @@ def render_board(digest, cfg, now, home_repo=None):
         if t.get("keywords"):
             bits.append("unlabelled ones mentioning " + safe(", ".join(t["keywords"])))
         lines += ["Triage also covers " + " and ".join(bits) + ".", ""]
-    lines += [summary_line(digest), "", "## Needs you", ""]
+    lines += [summary_line(digest), ""]
+    lines += render_watches(digest)
+    lines += ["## Needs you", ""]
     days = cfg.get("activity_days", 7)
     lines += _section(f"Activity on your threads, last {days} days", digest.board_activity,
                       empty=f"Nobody else has posted on your threads in the last {days} days.")
@@ -195,6 +225,13 @@ def render_comment(digest, cfg, now):
             + ". The full lists are in the issue above.",
             "",
         ]
+    names = []
+    for name, _ in digest.watch_new:
+        if name not in names:
+            names.append(name)
+    for name in names:
+        lines += [f"### 🔔 {safe(name)}", ""]
+        lines += [_watch_line(hit) for n, hit in digest.watch_new if n == name] + [""]
     if digest.needs_you:
         lines += _capped("Needs you", digest.needs_you, MAX_COMMENT_LINES)
     if digest.triage:
@@ -230,3 +267,51 @@ def publish(writer, repo, digest, cfg, now, comment=True):
     if comment:
         writer.add_comment(repo, issue["number"], render_comment(digest, cfg, now))
     return issue["html_url"]
+
+
+WATCH_LABEL = "oss-scout-watch"
+WATCH_LABEL_COLOR = "fbca04"
+
+
+def watch_title(name):
+    return f"Watch: {name}"
+
+
+def render_watch_issue(res, now):
+    """Body of a watch's own issue: what it looks for and what it has found so far."""
+    until = f" until {res.until}" if res.until else ""
+    lines = [f"oss-scout checks for this every weekday{until}. Press **Subscribe** on this issue to get an "
+             "email or GitHub notification when something turns up; each new find is posted as a comment.", ""]
+    if res.note:
+        lines += [f"_{safe(res.note)}_", ""]
+    lines += [f"### Found so far (updated {now.strftime('%a %d %b %Y')})", ""]
+    lines += [_watch_line(h) for h in res.hits] or ["_Nothing yet._"]
+    lines += [f"- _Couldn't check {safe(err[:200])}_" for err in res.errors]
+    return "\n".join(lines) + "\n"
+
+
+def publish_watches(writer, repo, digest, cfg, now):
+    """Keep one issue per public watch: create it, refresh its body, comment on new hits, and close
+    issues of watches that ended or were removed. Sets `issue_url` on each public watch."""
+    active = {watch_title(res.name): res for res in digest.watches if res.public}
+    # Listed whenever watches are configured, so a watch that ended or was removed gets its issue closed.
+    existing = {i["title"]: i for i in writer.open_issues(repo, WATCH_LABEL)} if "watches" in cfg else {}
+    for title, issue in existing.items():
+        if title not in active:
+            writer.add_comment(repo, issue["number"], "This watch has ended, so this issue is closed.")
+            writer.close_issue(repo, issue["number"])
+    if not active:
+        return
+    writer.ensure_label(repo, WATCH_LABEL, WATCH_LABEL_COLOR, "A one-off watch from oss-scout; subscribe to follow it")
+    for title, res in active.items():
+        body = render_watch_issue(res, now)
+        issue = existing.get(title)
+        if issue is None:
+            issue = writer.create_issue(repo, title, body, [WATCH_LABEL])
+        else:
+            writer.update_issue_body(repo, issue["number"], body)
+            new = [hit for name, hit in digest.watch_new if name == res.name]
+            if new:
+                writer.add_comment(repo, issue["number"],
+                                   "New:\n\n" + "\n".join(_watch_line(h) for h in new) + "\n")
+        res.issue_url = issue["html_url"]

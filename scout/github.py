@@ -141,6 +141,16 @@ class GitHub:
         data, _ = self._get(f"{self.api}/users/{login}")
         return data
 
+    def path_exists(self, repo, path):
+        """True if `path` (a file or directory) exists on the repo's default branch."""
+        try:
+            self._get(f"{self.api}/repos/{repo}/contents/{urllib.parse.quote(path)}")
+        except GitHubError as err:
+            if err.status == 404:
+                return False
+            raise
+        return True
+
     def pr_reviews(self, repo, number):
         data, _ = self._get(f"{self.api}/repos/{repo}/pulls/{number}/reviews?per_page=100")
         return data
@@ -152,6 +162,12 @@ class GitHub:
                             "&state=open&per_page=10")
         issues = [i for i in data if "pull_request" not in i]
         return issues[0] if issues else None
+
+    def open_issues(self, repo, label):
+        """Open issues (not PRs) carrying `label`, up to 100."""
+        data, _ = self._get(f"{self.api}/repos/{repo}/issues?labels={urllib.parse.quote(label)}"
+                            "&state=open&per_page=100")
+        return [i for i in data if "pull_request" not in i]
 
     def ensure_label(self, repo, name, color, description):
         try:

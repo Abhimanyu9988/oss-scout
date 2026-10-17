@@ -111,7 +111,7 @@ def main(argv=None, gh=None, now=None, writer=None, judge=None):
         print(f"error: unknown deliver target(s) {unknown}; use 'github' and/or 'slack'", file=sys.stderr)
         return 2
     count = (len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue) + len(digest.discovered)
-             + len(digest.triage))
+             + len(digest.triage) + len(digest.watch_new))
 
     if args.dry_run:
         print(text if not quiet_day else "Nothing new today.")
@@ -134,6 +134,7 @@ def main(argv=None, gh=None, now=None, writer=None, judge=None):
                 if writer is None:
                     writer = GitHub(os.environ.get("SCOUT_BOARD_TOKEN") or os.environ.get("SCOUT_WRITE_TOKEN")
                                     or resolve_token())
+                board.publish_watches(writer, repo, digest, cfg, now)
                 url = board.publish(writer, repo, digest, cfg, now, comment=not quiet_day)
                 print(f"Board updated: {url}" + ("" if quiet_day else f" (comment with {count} item(s))"))
                 for problem in hide.post_reactions(writer, repo, reactions):

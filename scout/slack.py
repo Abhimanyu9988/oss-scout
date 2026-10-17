@@ -38,6 +38,9 @@ def build_payload(digest, title, date_label):
             "*Watching from today.* From tomorrow you'll only hear about changes.\n"
             f"{c.get('free', 0)} free · {c.get('quiet', 0)} claimed-but-quiet · "
             f"{c.get('blocked', 0)} blocked · {c.get('taken', 0)} taken")}})
+    if digest.watch_new:
+        lines = [f"• <{h.url}|{esc(h.title[:90])}> — {esc(name)}" for name, h in digest.watch_new[:MAX_LINES_PER_SECTION]]
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "*Watch*\n" + "\n".join(lines)}})
     if digest.needs_you:
         blocks.append(_section("Needs you", digest.needs_you))
     if digest.triage:
@@ -53,7 +56,7 @@ def build_payload(digest, title, date_label):
         blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": esc(
             f"Partial scan, {len(digest.errors)} error(s). First: {digest.errors[0][:200]}")}]})
     total = (len(digest.needs_you) + len(digest.to_pick) + len(digest.review_queue) + len(digest.discovered)
-             + len(digest.triage))
+             + len(digest.triage) + len(digest.watch_new))
     fallback = f"{title}: {total} item(s) need a look"
     return {"text": fallback, "blocks": blocks}
 
