@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fake import FakeGitHub  # noqa: E402
+from fake import FakeGitHub, FakeWriter  # noqa: E402
 from test_scout import CFG  # noqa: E402
 from scout import board, slack, watch  # noqa: E402
 from scout.digest import build_digest  # noqa: E402
@@ -164,6 +164,57 @@ class DigestTest(unittest.TestCase):
         text = slack.to_plain_text(slack.build_payload(digest, "Scout", "Tue 15 Dec"))
         self.assertIn("*Watch*", text)
         self.assertIn("<https://github.com/kubernetes/sig-release/issues/3001|", text)
+
+
+class PublicIssueTest(unittest.TestCase):
+    HOME = "Abhimanyu9988/oss-scout"
+    PUBLIC = dict(WATCH, public_issue=True)
+
+    def run_publish(self, writer, state=None, watches=None, now=NOW):
+        c = cfg(*(watches if watches is not None else [self.PUBLIC]))
+        digest, new_state = build_digest(world(), c, state or {}, now, fetch=fetcher())
+        board.publish_watches(writer, self.HOME, digest, c, now)
+        return digest, new_state
+
+    def test_first_run_creates_the_issue_and_links_it_from_the_board(self):
+        w = FakeWriter()
+        digest, _ = self.run_publish(w)
+        (create,) = [c for c in w.calls if c[0] == "create"]
+        self.assertEqual(create[1], "Watch: Kubernetes v1.39 Release Team shadow application")
+        self.assertEqual(create[3], ["oss-scout-watch"])
+        self.assertIn("Press **Subscribe**", create[2])
+        self.assertIn(f"https://redirect.github.com/{SIG}/issues/3001", create[2])
+        self.assertNotIn("@Abhimanyu9988", create[2])              # subscribers only, nobody is mentioned
+        self.assertFalse([c for c in w.calls if c[0] == "comment"])   # nothing to tell subscribers yet
+        body = board.render_board(digest, cfg(self.PUBLIC), NOW, self.HOME)
+        self.assertIn("[subscribe to its issue](https://github.com/Abhimanyu9988/oss-scout/issues/1)", body)
+
+    def test_new_hits_are_commented_on_the_existing_issue(self):
+        issue = {"number": 5, "title": "Watch: Kubernetes v1.39 Release Team shadow application",
+                 "html_url": "https://github.com/Abhimanyu9988/oss-scout/issues/5"}
+        w = FakeWriter(watch_issues=[issue])
+        self.run_publish(w)
+        self.assertIn(("update", 5), [c[:2] for c in w.calls])
+        (comment,) = [c for c in w.calls if c[0] == "comment"]
+        self.assertTrue(comment[2].startswith("New:"))
+        self.assertIn("groups.google.com/a/kubernetes.io/g/dev/c/abc", comment[2])
+
+        _, state = self.run_publish(FakeWriter(watch_issues=[issue]))
+        w = FakeWriter(watch_issues=[issue])
+        self.run_publish(w, state=state)
+        self.assertFalse([c for c in w.calls if c[0] == "comment"])   # nothing new, no comment
+
+    def test_issue_is_closed_when_the_watch_ends(self):
+        issue = {"number": 5, "title": "Watch: Kubernetes v1.39 Release Team shadow application", "html_url": "u"}
+        w = FakeWriter(watch_issues=[issue])
+        self.run_publish(w, now=datetime(2027, 2, 1, 7, 0, tzinfo=timezone.utc))
+        self.assertIn(("close", 5), w.calls)
+        self.assertIn(("comment", 5, "This watch has ended, so this issue is closed."), w.calls)
+
+    def test_private_watch_gets_no_issue(self):
+        w = FakeWriter()
+        self.run_publish(w, watches=[WATCH])
+        self.assertFalse([c for c in w.calls if c[0] in ("create", "label")])
 
 
 if __name__ == "__main__":

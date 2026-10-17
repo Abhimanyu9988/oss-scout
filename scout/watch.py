@@ -16,7 +16,9 @@ Source types:
                  entries whose title or summary contains every word in "all" and at least one
                  in "any" (either list may be left out), published on or after "from"
 
-Per watch: "name", "sources", and optionally "from" and "until" (YYYY-MM-DD) and "note".
+Per watch: "name", "sources", and optionally "from" and "until" (YYYY-MM-DD), "note", and
+"public_issue": true to give the watch its own issue in the scout repo, which anyone can
+subscribe to. That issue gets a comment for each new hit and is closed when the watch ends.
 """
 
 import re
@@ -53,6 +55,8 @@ class WatchResult:
     until: str = ""
     hits: list = field(default_factory=list)
     errors: list = field(default_factory=list)
+    public: bool = False    # has its own issue in the scout repo that anyone can subscribe to
+    issue_url: str = ""
 
 
 def _day(value):
@@ -86,7 +90,8 @@ def check_all(gh, cfg, now, fetch=None):
     for watch in cfg.get("watches") or []:
         if not is_active(watch, now.date()):
             continue
-        res = WatchResult(watch.get("name", "Watch"), watch.get("note", ""), watch.get("until", ""))
+        res = WatchResult(watch.get("name", "Watch"), watch.get("note", ""), watch.get("until", ""),
+                          public=bool(watch.get("public_issue")))
         since = _day(watch.get("from"))
         for src in watch.get("sources") or []:
             kind = src.get("type")

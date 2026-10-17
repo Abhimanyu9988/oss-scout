@@ -191,7 +191,8 @@ email and the GitHub app), and the board lists it under **Watching** until the w
     "name": "Kubernetes v1.39 Release Team shadow application",
     "from": "2026-10-17",
     "until": "2027-01-31",
-    "note": "Read the role handbooks, then apply the same day.",
+    "note": "Sign-up form for v1.39 Release Team shadows.",
+    "public_issue": true,
     "sources": [
       {"type": "github_path", "label": "v1.39 folder in sig-release",
        "repo": "kubernetes/sig-release", "path": "releases/release-1.39"},
@@ -211,6 +212,9 @@ email and the GitHub app), and the board lists it under **Watching** until the w
 | `feed` | RSS or Atom entries whose title or summary contains every word in `all` and at least one in `any` (both optional), published on or after `from` |
 
 - Everything is a plain lookup or keyword match, so every hit links to where it was found.
+- With `"public_issue": true`, the watch also gets its own issue in your scout repo (labelled `oss-scout-watch`).
+  Anyone can press **Subscribe** on it; each new hit is posted there as a comment that mentions nobody, the board
+  links to it, and it's closed when the watch ends or is removed from the config.
 - Each hit is announced once, including on the first run, and stays on the board until `until` has passed.
 - A source that can't be read shows a *Couldn't check* line under its watch on the board, without marking the
   whole run as partial.

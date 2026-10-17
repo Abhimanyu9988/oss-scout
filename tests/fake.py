@@ -32,10 +32,15 @@ def xref(n, state, repo=REPO, merged=False):
 class FakeWriter:
     """Records writes to the board repo."""
 
-    def __init__(self, existing=None, fail=False):
+    def __init__(self, existing=None, fail=False, watch_issues=None):
         self.existing = existing
         self.fail = fail
         self.calls = []
+        self.watch_issues = watch_issues or []
+
+    def open_issues(self, repo, label):
+        self.calls.append(("list", label))
+        return self.watch_issues
 
     def find_open_issue(self, repo, label):
         self.calls.append(("find", repo, label))

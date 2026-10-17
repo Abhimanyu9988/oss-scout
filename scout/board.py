@@ -89,6 +89,8 @@ def render_watches(digest):
     for res in digest.watches:
         until = f" (until {res.until})" if res.until else ""
         lines += [f"### {safe(res.name)}{until}", ""]
+        if res.issue_url:
+            lines += [f"Anyone can follow this watch: [subscribe to its issue]({res.issue_url}).", ""]
         if res.note:
             lines += [f"_{safe(res.note)}_", ""]
         lines += [_watch_line(h) for h in res.hits] or ["_Nothing yet._"]
@@ -265,3 +267,51 @@ def publish(writer, repo, digest, cfg, now, comment=True):
     if comment:
         writer.add_comment(repo, issue["number"], render_comment(digest, cfg, now))
     return issue["html_url"]
+
+
+WATCH_LABEL = "oss-scout-watch"
+WATCH_LABEL_COLOR = "fbca04"
+
+
+def watch_title(name):
+    return f"Watch: {name}"
+
+
+def render_watch_issue(res, now):
+    """Body of a watch's own issue: what it looks for and what it has found so far."""
+    until = f" until {res.until}" if res.until else ""
+    lines = [f"oss-scout checks for this every weekday{until}. Press **Subscribe** on this issue to get an "
+             "email or GitHub notification when something turns up; each new find is posted as a comment.", ""]
+    if res.note:
+        lines += [f"_{safe(res.note)}_", ""]
+    lines += [f"### Found so far (updated {now.strftime('%a %d %b %Y')})", ""]
+    lines += [_watch_line(h) for h in res.hits] or ["_Nothing yet._"]
+    lines += [f"- _Couldn't check {safe(err[:200])}_" for err in res.errors]
+    return "\n".join(lines) + "\n"
+
+
+def publish_watches(writer, repo, digest, cfg, now):
+    """Keep one issue per public watch: create it, refresh its body, comment on new hits, and close
+    issues of watches that ended or were removed. Sets `issue_url` on each public watch."""
+    active = {watch_title(res.name): res for res in digest.watches if res.public}
+    # Listed whenever watches are configured, so a watch that ended or was removed gets its issue closed.
+    existing = {i["title"]: i for i in writer.open_issues(repo, WATCH_LABEL)} if "watches" in cfg else {}
+    for title, issue in existing.items():
+        if title not in active:
+            writer.add_comment(repo, issue["number"], "This watch has ended, so this issue is closed.")
+            writer.close_issue(repo, issue["number"])
+    if not active:
+        return
+    writer.ensure_label(repo, WATCH_LABEL, WATCH_LABEL_COLOR, "A one-off watch from oss-scout; subscribe to follow it")
+    for title, res in active.items():
+        body = render_watch_issue(res, now)
+        issue = existing.get(title)
+        if issue is None:
+            issue = writer.create_issue(repo, title, body, [WATCH_LABEL])
+        else:
+            writer.update_issue_body(repo, issue["number"], body)
+            new = [hit for name, hit in digest.watch_new if name == res.name]
+            if new:
+                writer.add_comment(repo, issue["number"],
+                                   "New:\n\n" + "\n".join(_watch_line(h) for h in new) + "\n")
+        res.issue_url = issue["html_url"]

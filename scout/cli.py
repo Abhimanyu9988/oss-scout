@@ -134,6 +134,7 @@ def main(argv=None, gh=None, now=None, writer=None, judge=None):
                 if writer is None:
                     writer = GitHub(os.environ.get("SCOUT_BOARD_TOKEN") or os.environ.get("SCOUT_WRITE_TOKEN")
                                     or resolve_token())
+                board.publish_watches(writer, repo, digest, cfg, now)
                 url = board.publish(writer, repo, digest, cfg, now, comment=not quiet_day)
                 print(f"Board updated: {url}" + ("" if quiet_day else f" (comment with {count} item(s))"))
                 for problem in hide.post_reactions(writer, repo, reactions):
