@@ -179,6 +179,44 @@ To set up triage, add a `triage` block:
 `languages` is optional and filters by the repository's main language. Each run re-checks only issues that changed
 since the last one, so this stays within GitHub's rate limits.
 
+### Watches
+
+A watch looks out for one specific thing that only happens now and then, such as an application form that opens
+once a release cycle. When it finds something, the day's comment says so under a 🔔 heading (which reaches you by
+email and the GitHub app), and the board lists it under **Watching** until the watch ends.
+
+```json
+"watches": [
+  {
+    "name": "Kubernetes v1.39 Release Team shadow application",
+    "from": "2026-10-17",
+    "until": "2027-01-31",
+    "note": "Read the role handbooks, then apply the same day.",
+    "sources": [
+      {"type": "github_path", "label": "v1.39 folder in sig-release",
+       "repo": "kubernetes/sig-release", "path": "releases/release-1.39"},
+      {"type": "github_search", "label": "sig-release issues and PRs about v1.39 shadows",
+       "query": "repo:kubernetes/sig-release 1.39 shadow"},
+      {"type": "feed", "label": "dev@kubernetes.io",
+       "url": "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_msgs.xml", "all": ["shadow"]}
+    ]
+  }
+]
+```
+
+| Source | Finds |
+|---|---|
+| `github_path` | The `path` (file or folder) appearing in `repo` |
+| `github_search` | Issues and PRs matching a [GitHub search](https://docs.github.com/en/search-github/searching-on-github/searching-issues-and-pull-requests), created on or after `from` |
+| `feed` | RSS or Atom entries whose title or summary contains every word in `all` and at least one in `any` (both optional), published on or after `from` |
+
+- Everything is a plain lookup or keyword match, so every hit links to where it was found.
+- Each hit is announced once, including on the first run, and stays on the board until `until` has passed.
+- A source that can't be read shows a *Couldn't check* line under its watch on the board, without marking the
+  whole run as partial.
+- The digest runs on weekdays, so something posted on a Saturday is reported on Monday. If that matters, run it
+  every day (see [How often it runs](#how-often-it-runs)).
+
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -202,6 +240,7 @@ since the last one, so this stays within GitHub's rate limits.
 | `triage.keywords` | none | Words that catch unlabelled new issues in your watched repos |
 | `triage.repos` | none | Extra repos watched for new issues only |
 | `triage.max_per_repo` | 300 | Cap on new issues read per repo |
+| `watches` | none | One-off things to look out for; see [Watches](#watches) |
 | `triage.max_checks` | 150 | Cap on issues whose comments and linked PRs are read per run; the rest are read on later runs |
 | `ai.enabled` | true when the key is set | Set `false` to skip the AI check even with a key |
 | `ai.model` | `claude-haiku-5-5` | Model for the AI check |

@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from .classify import (ASSIGN_RE, CLAIM_RE, DEFAULT_BLOCKING_LABELS, Candidate, actor_of, classify,
                        days_between, is_bot, parse_time)
-from . import ai
+from . import ai, watch
 from .github import GitHubError
 
 
@@ -41,10 +41,12 @@ class Digest:
     board_mine: list = field(default_factory=list)         # every open PR you authored, with review status
     board_activity: list = field(default_factory=list)     # threads you're in with activity by others lately
     hidden: list = field(default_factory=list)             # keys you hid with /hide on the board issue
+    watches: list = field(default_factory=list)            # watch.WatchResult per active watch, for the board
+    watch_new: list = field(default_factory=list)          # (watch name, Hit) seen for the first time
 
     def is_empty(self):
         return not (self.needs_you or self.to_pick or self.review_queue or self.discovered
-                    or self.triage or self.errors or self.baseline)
+                    or self.triage or self.watch_new or self.errors or self.baseline)
 
 
 def iso(dt):
@@ -704,13 +706,21 @@ def describe_events(events, user, since):
     return phrases
 
 
-def build_digest(gh, cfg, state, now, judge=None, activity_since=None):
+def build_digest(gh, cfg, state, now, judge=None, activity_since=None, fetch=None):
     """Returns (digest, new_state). On the first run it records a baseline instead of
     reporting everything as new. `activity_since` overrides where the activity check starts,
-    to catch up after a missed day."""
+    to catch up after a missed day. `fetch` reads watch feeds (tests pass their own)."""
     digest = Digest()
     errors = digest.errors
     seen = state.get("seen", {})
+
+    # Watches are announced the first time each hit is seen, even on the very first run:
+    # they exist to catch something that's only open for a short time.
+    digest.watches = watch.check_all(gh, cfg, now, fetch=fetch)
+    watch_seen = set(seen.get("watch", []))
+    for res in digest.watches:
+        digest.watch_new += [(res.name, hit) for hit in res.hits if hit.key not in watch_seen]
+    watch_keys = sorted(watch_seen | {hit.key for res in digest.watches for hit in res.hits})
     first_run = not state.get("last_run")
     recent_since = now - timedelta(days=cfg.get("activity_days", 7))
     if activity_since is not None:
@@ -841,6 +851,7 @@ def build_digest(gh, cfg, state, now, judge=None, activity_since=None):
             "discovered": merged("discovered", found),
             "triage": merged("triage", triage_found),
             "waiting": merged("waiting", waiting),
+            "watch": watch_keys,
         },
         "discover_cache": cache,
         "ai_cache": ai_cache,

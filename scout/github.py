@@ -141,6 +141,16 @@ class GitHub:
         data, _ = self._get(f"{self.api}/users/{login}")
         return data
 
+    def path_exists(self, repo, path):
+        """True if `path` (a file or directory) exists on the repo's default branch."""
+        try:
+            self._get(f"{self.api}/repos/{repo}/contents/{urllib.parse.quote(path)}")
+        except GitHubError as err:
+            if err.status == 404:
+                return False
+            raise
+        return True
+
     def pr_reviews(self, repo, number):
         data, _ = self._get(f"{self.api}/repos/{repo}/pulls/{number}/reviews?per_page=100")
         return data

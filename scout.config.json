@@ -92,5 +92,39 @@
     "discussion needed",
     "needs discussion",
     "triage:needs-triage"
+  ],
+  "watches": [
+    {
+      "name": "Kubernetes v1.39 Release Team shadow application",
+      "from": "2026-10-17",
+      "until": "2027-01-31",
+      "note": "The sign-up form is posted in the last week of v1.38 or the first week of v1.39 (dev@kubernetes.io and #sig-release). Read the Release Signal and Comms handbooks, then apply the same day.",
+      "sources": [
+        {
+          "type": "github_path",
+          "label": "v1.39 release folder in sig-release",
+          "repo": "kubernetes/sig-release",
+          "path": "releases/release-1.39"
+        },
+        {
+          "type": "github_search",
+          "label": "sig-release issues and PRs about v1.39 shadows",
+          "query": "repo:kubernetes/sig-release 1.39 shadow"
+        },
+        {
+          "type": "github_search",
+          "label": "sig-release issues and PRs about the v1.39 release team",
+          "query": "repo:kubernetes/sig-release \"1.39\" \"release team\" in:title"
+        },
+        {
+          "type": "feed",
+          "label": "dev@kubernetes.io",
+          "url": "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_msgs.xml",
+          "all": [
+            "shadow"
+          ]
+        }
+      ]
+    }
   ]
 }
