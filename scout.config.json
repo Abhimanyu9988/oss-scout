@@ -118,8 +118,8 @@
         },
         {
           "type": "feed",
-          "label": "dev@kubernetes.io",
-          "url": "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_msgs.xml",
+          "label": "Kubernetes contributor blog",
+          "url": "https://www.kubernetes.dev/blog/index.xml",
           "all": [
             "shadow"
           ]
