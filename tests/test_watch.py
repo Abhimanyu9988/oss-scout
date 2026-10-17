@@ -102,6 +102,19 @@ class SourcesTest(unittest.TestCase):
         self.assertEqual(len(res.hits), 2)
         self.assertTrue(res.errors and res.errors[0].startswith("dev@kubernetes.io: not a valid feed"))
 
+    def test_only_https_feeds_and_web_links(self):
+        with self.assertRaises(watch.WatchError):
+            watch.fetch_url("file:///etc/passwd")
+        raw = RSS.replace(b"https://groups.google.com/a/kubernetes.io/g/dev/c/abc", b"javascript:alert(1)")
+        self.assertEqual(watch._feed_hits(fetcher(raw), WATCH["sources"][2], None, "dev")[0].url,
+                         "https://groups.google.com/a/kubernetes.io/g/dev/c/old")   # only the other match is kept
+
+    def test_feed_title_cannot_inject_a_link(self):
+        hit = watch.Hit("feed:x", "https://example.org/a", "shadow](https://evil.example) [x", "dev")
+        line = board._watch_line(hit)
+        self.assertEqual(line.count("]("), 1)
+        self.assertNotIn("](https://evil.example)", line)
+
     def test_expired_watch_is_skipped(self):
         self.assertEqual(watch.check_all(world(), cfg(dict(WATCH, until="2026-12-01")), NOW, fetch=fetcher()), [])
 

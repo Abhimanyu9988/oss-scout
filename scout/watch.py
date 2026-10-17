@@ -65,6 +65,9 @@ def is_active(watch, today):
 
 
 def fetch_url(url):
+    # Only https: a config pointing at file:// or a plain-http address would otherwise be read too.
+    if not url.lower().startswith("https://"):
+        raise WatchError("feed URL must start with https://")
     req = urllib.request.Request(url, headers={"User-Agent": "oss-scout (https://github.com/Abhimanyu9988/oss-scout)",
                                                "Accept": "application/rss+xml, application/atom+xml, application/xml, */*"})
     try:
@@ -173,7 +176,8 @@ def matches(text, all_words=(), any_words=()):
 def _feed_hits(fetch, src, since, label):
     hits = []
     for title, link, published, summary in parse_feed(fetch(src["url"])):
-        if not link or not matches(f"{title} {_strip_tags(summary)}", src.get("all") or (), src.get("any") or ()):
+        # Links come from someone else's feed: keep only ordinary web links.
+        if not link.lower().startswith(("https://", "http://")) or not matches(f"{title} {_strip_tags(summary)}", src.get("all") or (), src.get("any") or ()):
             continue
         if since and published is not None:
             if published.tzinfo is None:

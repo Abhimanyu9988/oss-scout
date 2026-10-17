@@ -76,7 +76,9 @@ def _collapsed(heading, items, limit, empty="Nothing right now."):
 
 def _watch_line(hit):
     when = f" · {hit.when}" if hit.when else ""
-    return f"- [{safe(hit.title)}]({quiet_link(hit.url)}) — {safe(hit.source)}{when}"
+    # Feed titles are written by anyone who can post there: brackets can't close the link early.
+    title = safe(hit.title).replace("[", "(").replace("]", ")")
+    return f"- [{title}]({quiet_link(hit.url)}) — {safe(hit.source)}{when}"
 
 
 def render_watches(digest):
