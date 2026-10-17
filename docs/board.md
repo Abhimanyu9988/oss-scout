@@ -198,8 +198,8 @@ email and the GitHub app), and the board lists it under **Watching** until the w
        "repo": "kubernetes/sig-release", "path": "releases/release-1.39"},
       {"type": "github_search", "label": "sig-release issues and PRs about v1.39 shadows",
        "query": "repo:kubernetes/sig-release 1.39 shadow"},
-      {"type": "feed", "label": "dev@kubernetes.io",
-       "url": "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_msgs.xml", "all": ["shadow"]}
+      {"type": "feed", "label": "Kubernetes contributor blog",
+       "url": "https://www.kubernetes.dev/blog/index.xml", "all": ["shadow"]}
     ]
   }
 ]
@@ -212,6 +212,8 @@ email and the GitHub app), and the board lists it under **Watching** until the w
 | `feed` | RSS or Atom entries whose title or summary contains every word in `all` and at least one in `any` (both optional), published on or after `from` |
 
 - Everything is a plain lookup or keyword match, so every hit links to where it was found.
+- Google Groups mailing lists (such as dev@kubernetes.io) don't offer a feed, so they can't be watched this way.
+  Join the list by email instead.
 - With `"public_issue": true`, the watch also gets its own issue in your scout repo (labelled `oss-scout-watch`).
   Anyone can press **Subscribe** on it; each new hit is posted there as a comment that mentions nobody, the board
   links to it, and it's closed when the watch ends or is removed from the config.
