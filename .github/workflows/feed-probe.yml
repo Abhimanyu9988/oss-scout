@@ -1,0 +1,25 @@
+name: Feed probe (temporary)
+on:
+  push:
+    branches: [feed-probe]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for u in \
+            "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_msgs.xml" \
+            "https://groups.google.com/a/kubernetes.io/g/dev/feed/rss_v2_0_topics.xml" \
+            "https://groups.google.com/a/kubernetes.io/g/dev/feed/atom_v1_0_msgs.xml" \
+            "https://groups.google.com/a/kubernetes.io/forum/feed/dev/msgs/rss.xml?num=15" \
+            "https://groups.google.com/a/kubernetes.io/forum/feed/dev/topics/rss.xml?num=15" \
+            "https://groups.google.com/a/kubernetes.io/forum/feed/dev/msgs/atom.xml?num=15" \
+            "https://www.kubernetes.dev/blog/index.xml" \
+            "https://kubernetes.io/feed.xml" ; do
+            code=$(curl -sL -A "oss-scout" -o out.txt -w "%{http_code} %{content_type}" "$u")
+            echo "=== $code $u"
+            head -c 400 out.txt | tr '\n' ' '; echo
+            grep -o -i "<title>[^<]*shadow[^<]*</title>" out.txt | head -5
+          done
