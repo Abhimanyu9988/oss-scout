@@ -39,6 +39,26 @@
         "sql",
         "stored_procedure"
       ]
+    },
+    {
+      "repo": "open-telemetry/opentelemetry-operator",
+      "labels": [
+        "area:auto-instrumentation",
+        "area:collector",
+        "area:target-allocator",
+        "area:rbac",
+        "area:cluster-observability",
+        "area:opamp"
+      ],
+      "keywords": [
+        "instrumentation",
+        "collector",
+        "target allocator",
+        "targetallocator",
+        "opamp",
+        "webhook",
+        "operator"
+      ]
     }
   ],
   "discover": {
@@ -87,6 +107,10 @@
   },
   "blocking_labels": [
     "waiting for author",
+    "waiting-for-author",
+    "needs-info",
+    "discuss-at-sig",
+    "needs triage",
     "waiting-for:semantic-conventions",
     "waiting-for-code-owners",
     "discussion needed",
