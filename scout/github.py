@@ -95,7 +95,7 @@ class GitHub:
                 return
             url = match.group(1)
 
-    def open_items(self, repo, label, limit=60):
+    def open_items(self, repo, label, limit=60, max_pages=3):
         """Open items carrying `label`, newest activity first, split into
         (unassigned issues, pull requests). One listing serves both, which keeps
         the run off the search API and its strict secondary rate limits."""
@@ -103,7 +103,7 @@ class GitHub:
         if label:
             params["labels"] = label
         issues, prs = [], []
-        for page in self._pages(f"/repos/{repo}/issues", params, max_pages=3):
+        for page in self._pages(f"/repos/{repo}/issues", params, max_pages=max_pages):
             for item in page:
                 if "pull_request" in item:
                     prs.append(item)
@@ -150,6 +150,13 @@ class GitHub:
                 return False
             raise
         return True
+
+    def pr_files(self, repo, number):
+        """Files a PR changes, up to 900."""
+        files = []
+        for page in self._pages(f"/repos/{repo}/pulls/{number}/files", {"per_page": 100}, max_pages=9):
+            files.extend(page)
+        return files
 
     def pr_reviews(self, repo, number):
         data, _ = self._get(f"{self.api}/repos/{repo}/pulls/{number}/reviews?per_page=100")

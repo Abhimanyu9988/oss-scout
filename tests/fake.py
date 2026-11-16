@@ -87,12 +87,20 @@ class FakeGitHub:
         self.incomplete = set()          # needles whose searches GitHub "times out" on
         self.last_incomplete = False
         self.paths = set()               # "owner/repo/path" entries that exist
+        self.files = {}                  # PR number -> changed file names
+        self.file_calls = []
+        self.open_calls = []
 
     def path_exists(self, repo, path):
         return f"{repo}/{path}" in self.paths
 
-    def open_items(self, repo, label, limit=60):
+    def open_items(self, repo, label, limit=60, max_pages=3):
+        self.open_calls.append((repo, label, max_pages))
         return self.issues_by_label.get(label, [])[:limit], self.prs_by_label.get(label, [])
+
+    def pr_files(self, repo, number):
+        self.file_calls.append(number)
+        return [{"filename": f} for f in self.files.get(number, [])]
 
     def pr_reviews(self, repo, number):
         self.review_calls.append(number)

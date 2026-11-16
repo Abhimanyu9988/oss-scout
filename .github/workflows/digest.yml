@@ -51,6 +51,7 @@ jobs:
           SCOUT_WRITE_TOKEN: ${{ github.token }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SCOUT_ACTIVITY_SINCE: ${{ inputs.activity_since }}
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
