@@ -51,6 +51,30 @@ class FocusTest(unittest.TestCase):
         self.assertEqual(sorted(gh.file_calls), [7156, 7169])              # title match needs no file read
         self.assertNotIn(7230, gh.file_calls)                              # too young to check at all
 
+    def test_bots_ancient_prs_and_huge_diffs_are_left_out(self):
+        from scout.github import GitHubError
+        gh = dp_world()
+        gh.prs_by_label[None] += [pr(6802, "Bump lombok in /data-prepper-plugins/otel-logs-source", "dependabot[bot]",
+                                     created="2026-05-01T00:00:00Z"),
+                                  pr(5613, "Provide an OTel Logs Ingestion Example", "KarstenSchnitter",
+                                     created="2025-03-01T00:00:00Z"),
+                                  pr(7275, "Big refactor", "someone", created="2026-10-01T00:00:00Z")]
+        real_files = gh.pr_files
+
+        def files(repo, number):
+            if number == 7275:
+                err = GitHubError("HTTP 500: diff temporarily unavailable")
+                err.status = 500
+                raise err
+            return real_files(repo, number)
+        gh.pr_files = files
+        cfg = dict(CFG, repos=[dict(CFG["repos"][0], review_max_age_days=90)])
+        prs, errors = {}, []
+        scan_candidates(gh, cfg, NOW, [], prs)
+        queue = unreviewed_prs(gh, cfg, NOW, prs, set(), errors)
+        self.assertEqual(sorted(queue), [f"{DP}#7148", f"{DP}#7169"])
+        self.assertEqual(errors, [])
+
     def test_a_repo_can_set_its_own_review_wait(self):
         gh = dp_world()
         prs = {}
@@ -131,7 +155,10 @@ class OpenAITest(unittest.TestCase):
             self.assertEqual(ai.Judge.from_env(CFG).provider, "anthropic")          # Anthropic first by default
             self.assertEqual(ai.Judge.from_env(dict(CFG, ai={"provider": "openai"})).provider, "openai")
             del os.environ["OPENAI_API_KEY"]
-            self.assertIsNone(ai.Judge.from_env(dict(CFG, ai={"provider": "openai"})))  # no silent switch
+            j = ai.Judge.from_env(dict(CFG, ai={"provider": "openai", "model": "gpt-x"}))
+            self.assertEqual((j.provider, j.model), ("anthropic", ai.DEFAULT_MODEL))   # falls back, drops gpt-x
+            del os.environ["ANTHROPIC_API_KEY"]
+            self.assertIsNone(ai.Judge.from_env(dict(CFG, ai={"provider": "openai"})))
             with self.assertRaises(ai.AIError):
                 ai.Judge.from_env(dict(CFG, ai={"provider": "gemini"}))
         finally:

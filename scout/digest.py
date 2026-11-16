@@ -135,8 +135,10 @@ def unreviewed_prs(gh, cfg, now, prs, already_reported, errors):
     """Open, non-draft PRs in your labels, older than N days, not yours, with no review
     from anyone but the author. PRs already reported stay in the set while they are open
     without re-checking, so each run only fetches reviews for new candidates. A repo can set
-    its own `stale_review_days`, and PRs matched only by `paths` have their files read here."""
+    its own `stale_review_days`, and PRs matched only by `paths` have their files read here. In
+    a keyword- or path-narrowed repo, bot PRs and PRs older than `review_max_age_days` are left out."""
     own_days, _ = review_days(cfg)
+    narrowed = {r["repo"]: r for r in cfg["repos"] if not r.get("labels") and (r.get("keywords") or r.get("paths"))}
     user = cfg["github_user"].lower()
     found = {}
     for key, (repo, label, pr) in prs.items():
@@ -144,12 +146,23 @@ def unreviewed_prs(gh, cfg, now, prs, already_reported, errors):
         cutoff = now - timedelta(days=own_days.get(repo, cfg.get("stale_review_days", 7)))
         if pr.get("draft") or author.lower() == user or parse_time(pr["created_at"]) > cutoff:
             continue
+        focus = narrowed.get(repo)
+        if focus:
+            # Dependency bumps aren't review openings, and a PR untouched for months is likely abandoned.
+            max_age = focus.get("review_max_age_days")
+            if author.endswith("[bot]") or (max_age and parse_time(pr["created_at"]) < now - timedelta(days=max_age)):
+                continue
         if key in already_reported:
             found[key] = (repo, label, pr)
             continue
         try:
             if pr.get("_scout_paths"):
-                files = gh.pr_files(repo, pr["number"])
+                try:
+                    files = gh.pr_files(repo, pr["number"])
+                except GitHubError as err:
+                    if (err.status or 0) < 500:
+                        raise
+                    continue                  # GitHub won't list a very large diff; try again next run
                 if not any(f.get("filename", "").startswith(tuple(pr["_scout_paths"])) for f in files):
                     continue
             reviews = gh.pr_reviews(repo, pr["number"])

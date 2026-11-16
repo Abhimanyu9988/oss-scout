@@ -80,7 +80,8 @@
         "data-prepper-plugins/otlp-",
         "data-prepper-plugins/prometheus-"
       ],
-      "stale_review_days": 2
+      "stale_review_days": 2,
+      "review_max_age_days": 90
     }
   ],
   "discover": {

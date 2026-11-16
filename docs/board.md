@@ -115,7 +115,7 @@ gh secret set OPENAI_API_KEY -R <you>/oss-scout
 ```
 
 With both keys set, Claude is used unless `"ai": {"provider": "openai"}` says otherwise. With a provider
-set but its key missing, the check is off for that run and the job log says so. Either way scout does the
+set but only the other key present, that one is used (with its default model) and the job log says so. Either way scout does the
 GitHub reading itself; the model only judges what was fetched.
 
 Use a key made just for oss-scout, so it has its own spend limit and can be revoked on its own. Without
@@ -167,7 +167,9 @@ For a big repo that doesn't label by component, narrow it down with `keywords` a
 Issues then need a keyword in the title or labels (`otel` matches `otel_trace_source`), and so do new
 issues on the triage list. PRs need a keyword in the title or labels, or must change a file whose path
 starts with one of `paths`; the files are only read for PRs old enough for the review list. A repo's own
-`stale_review_days` overrides the global one.
+`stale_review_days` overrides the global one. In such a repo, PRs by bots (dependency bumps) never make
+the review list, and `review_max_age_days` leaves out PRs opened longer ago than that, which are
+usually abandoned.
 
 To look across whole organisations, add a `discover` block:
 

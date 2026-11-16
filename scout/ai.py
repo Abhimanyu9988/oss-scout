@@ -92,7 +92,13 @@ class Judge:
         env, default_model = PROVIDERS[provider]
         key = os.environ.get(env)
         if not key:
-            return None
+            # The chosen provider has no key: use the other one rather than switch the check off.
+            other = next((p for p, (e, _) in PROVIDERS.items() if p != provider and os.environ.get(e)), None)
+            if other is None:
+                return None
+            provider, (env, default_model) = other, PROVIDERS[other]
+            key = os.environ[env]
+            ai = {k: v for k, v in ai.items() if k not in ("model", "max_tokens")}   # meant for the first choice
         cap = ai.get("max_tokens", OPENAI_MAX_TOKENS if provider == "openai" else MAX_TOKENS)
         return cls(key, ai.get("model", default_model), ai.get("max_calls", 40),
                    max_tokens=cap, provider=provider)

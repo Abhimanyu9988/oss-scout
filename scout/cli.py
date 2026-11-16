@@ -74,9 +74,13 @@ def main(argv=None, gh=None, now=None, writer=None, judge=None):
     if judge is None and live:
         judge = ai.Judge.from_env(cfg)
         provider = (cfg.get("ai") or {}).get("provider")
-        if judge is None and provider in ai.PROVIDERS and (cfg.get("ai") or {}).get("enabled") is not False:
-            print(f"note: ai.provider is {provider} but {ai.PROVIDERS[provider][0]} isn't set; "
-                  "the AI check is off this run", file=sys.stderr)
+        if provider in ai.PROVIDERS and (cfg.get("ai") or {}).get("enabled") is not False:
+            if judge is None:
+                print(f"note: ai.provider is {provider} but {ai.PROVIDERS[provider][0]} isn't set; "
+                      "the AI check is off this run", file=sys.stderr)
+            elif judge.provider != provider:
+                print(f"note: ai.provider is {provider} but {ai.PROVIDERS[provider][0]} isn't set; "
+                      f"using {judge.provider} this run", file=sys.stderr)
     if judge is not None:
         print(f"AI check: {judge.provider} {judge.model}")
     activity_since = None
