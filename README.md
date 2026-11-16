@@ -43,6 +43,10 @@ To review
 
 Optionally, it also keeps:
 
+- **Findings from your own labs.** If you publish hands-on articles with their raw output, each new one is
+  read once for bugs or missing features in the components you watch. A finding stays only if its evidence
+  is quoted word for word from the article or logs; it lands on the board with a possible duplicate and a
+  draft issue for you to file. Set `labs` in the config; it needs `ANTHROPIC_API_KEY`.
 - **[A contribution log](docs/contribution-log.md)** on your GitHub profile: merged PRs with who approved them,
   reviews, discussions, and publications from ORCID, rebuilt daily from GitHub's record.
 - **[A private portfolio](docs/portfolio.md)** of the same work sorted into your own categories, with

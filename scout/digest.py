@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from .classify import (ASSIGN_RE, CLAIM_RE, DEFAULT_BLOCKING_LABELS, Candidate, actor_of, classify,
                        days_between, is_bot, parse_time)
-from . import ai, watch
+from . import ai, labs, watch
 from .github import GitHubError
 
 
@@ -40,6 +40,7 @@ class Digest:
     board_aside: list = field(default_factory=list)        # free by the rules, but the AI check says not to start
     board_mine: list = field(default_factory=list)         # every open PR you authored, with review status
     board_activity: list = field(default_factory=list)     # threads you're in with activity by others lately
+    board_labs: list = field(default_factory=list)         # upstream bugs/enhancements found in your lab write-ups
     hidden: list = field(default_factory=list)             # keys you hid with /hide on the board issue
     watches: list = field(default_factory=list)            # watch.WatchResult per active watch, for the board
     watch_new: list = field(default_factory=list)          # (watch name, Hit) seen for the first time
@@ -766,6 +767,7 @@ def build_digest(gh, cfg, state, now, judge=None, activity_since=None, fetch=Non
         keep = {c.key for c in still}
         free = {k: c for k, c in free.items() if k in keep}
         found = {k: c for k, c in found.items() if k in keep}
+    lab_found, lab_cache = labs.find(gh, judge, cfg, state.get("labs_cache", {}), errors)
     triage_found, triage_cache = new_issues(gh, cfg, now, state, errors)
     waiting = waiting_on_others(gh, cfg, now, errors,
                                 skip=set(my_waiting) | set(my_claims) | set(requested or {}))
@@ -804,6 +806,10 @@ def build_digest(gh, cfg, state, now, judge=None, activity_since=None, fetch=Non
         # records what's there, instead of announcing every current item as new.
         if "triage" in seen:
             digest.triage = _sorted_triage({k: v for k, v in triage_found.items() if k not in seen["triage"]})
+        if "labs" in seen:
+            digest.needs_you.extend(Item(f["key"], f["url"], f"{f['repo'].split('/')[-1]} {f['label']}: {f['title']}",
+                                         f"worth filing upstream ({f['kind']}), from your lab")
+                                    for f in lab_found if f["key"] not in seen["labs"])
         if "waiting" in seen:
             digest.needs_you.extend(item for key, (age, item) in sorted(waiting.items())
                                     if key not in seen["waiting"])
@@ -826,6 +832,7 @@ def build_digest(gh, cfg, state, now, judge=None, activity_since=None, fetch=Non
     if (cfg.get("discover") or {}).get("orgs"):
         digest.counts["discovered"] = len(found)
     digest.board_triage = _sorted_triage(triage_found)
+    digest.board_labs = lab_found
     digest.board_waiting = [item for _, (age, item) in sorted(waiting.items(), key=lambda kv: (-kv[1][0], kv[0]))]
     if triage_found:
         digest.counts["new_issues"] = len(triage_found)
@@ -851,11 +858,13 @@ def build_digest(gh, cfg, state, now, judge=None, activity_since=None, fetch=Non
             "discovered": merged("discovered", found),
             "triage": merged("triage", triage_found),
             "waiting": merged("waiting", waiting),
+            "labs": merged("labs", {f["key"] for f in lab_found}),
             "watch": watch_keys,
         },
         "discover_cache": cache,
         "ai_cache": ai_cache,
         "triage_cache": triage_cache,
+        "labs_cache": lab_cache,
     }
     return digest, new_state
 
