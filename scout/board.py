@@ -125,6 +125,34 @@ def summary_line(digest):
     return " · ".join(bits)
 
 
+def render_labs(digest, cfg):
+    """Findings from your own lab write-ups, each with a draft issue to file yourself."""
+    if not (cfg.get("labs") or {}).get("repo"):
+        return []
+    lines = ["## Worth filing upstream, from your labs", ""]
+    if not digest.board_labs:
+        return lines + ["Nothing found in your lab write-ups.", ""]
+    for f in digest.board_labs:
+        dup = (f" · possible duplicate: [{_ref_url(f['duplicate'])}]({quiet_link(f['duplicate'])})"
+               if f.get("duplicate") else "")
+        body = f["body"].replace(FENCE, "~~~")
+        lines += [f"<details><summary><b>{safe(f['repo'].split('/')[-1])} {safe(f['label'])}</b> · {f['kind']} · "
+                  f"{safe(f['title'])}</summary>", "",
+                  f"From [{safe(f['slug'])}]({f['url']}){dup}", "",
+                  "Evidence: " + "`" + f["evidence"].replace("`", "'") + "`", "",
+                  f"Why: {safe(f['why'])}", "",
+                  "Draft to file:", "", FENCE + "markdown", body, FENCE, "", "</details>", ""]
+    return lines
+
+
+FENCE = "```"
+
+
+def _ref_url(url):
+    parts = url.rstrip("/").split("/")
+    return f"{parts[-4]}#{parts[-1]}" if len(parts) >= 4 else url
+
+
 def render_board(digest, cfg, now, home_repo=None):
     cap = cfg.get("board_section_limit", SECTION_LIMIT)
 
@@ -167,6 +195,7 @@ def render_board(digest, cfg, now, home_repo=None):
                       digest.board_my_claims, empty="None.")
     lines += _section(f"Waiting on others: you spoke last {cfg.get('waiting_days', 7)}+ days ago",
                       digest.board_waiting, empty="Nobody owes you a reply.")
+    lines += render_labs(digest, cfg)
     t = cfg.get("triage") or {}
     if t.get("enabled") is not False:
         days = t.get("days", 7)

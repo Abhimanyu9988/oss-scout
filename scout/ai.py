@@ -92,6 +92,19 @@ class Judge:
             raise AIError(f"model stopped with max_tokens ({self.max_tokens}); reply began: {start!r}") from None
 
 
+    def ask_json(self, system, prompt, model=None, max_tokens=None):
+        """One call with another system prompt; returns the answer's text for the caller to parse.
+        Counts against the same call budget as ask()."""
+        self.calls += 1
+        data = self._post(API, {"x-api-key": self.api_key, "anthropic-version": "2023-06-01",
+                                "content-type": "application/json"},
+                          {"model": model or self.model, "max_tokens": max_tokens or self.max_tokens,
+                           "system": system, "messages": [{"role": "user", "content": prompt}]})
+        if data.get("stop_reason") == "refusal":
+            raise AIError("model stopped with refusal")
+        return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
+
+
 def parse_verdict(text):
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:

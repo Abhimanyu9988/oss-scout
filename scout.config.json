@@ -151,5 +151,12 @@
       ],
       "public_issue": true
     }
-  ]
+  ],
+  "labs": {
+    "repo": "Abhimanyu9988/showmerit",
+    "articles": "content/abhimanyu/articles",
+    "labs": "labs",
+    "site": "https://showmerit.com/abhimanyu/articles/{slug}/",
+    "max_calls": 3
+  }
 }
