@@ -213,7 +213,10 @@ def render_board(digest, cfg, now, home_repo=None):
         lines += _folded("Free by the rules, but the AI check says not to start", digest.board_aside)
     lines += _folded(f"Claimed by someone else but quiet for {cfg.get('quiet_days', 45)}+ days", digest.board_quiet)
     lines += ["## To review", ""]
-    lines += _folded(f"PRs in your areas waiting {cfg.get('stale_review_days', 7)}+ days for a first review",
+    # Repos can set their own wait; the heading gives the shortest, which is true for all of them.
+    wait = min([cfg.get("stale_review_days", 7)]
+               + [r["stale_review_days"] for r in cfg.get("repos", []) if "stale_review_days" in r])
+    lines += _folded(f"PRs in your areas waiting {wait}+ days for a first review",
                      digest.board_queue)
     if digest.hidden:
         lines += ["<details>", f"<summary><b>Hidden ({len(digest.hidden)})</b></summary>", ""]

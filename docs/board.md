@@ -93,7 +93,8 @@ Claim detection is a heuristic. Read the thread before you comment.
 ## Optional AI check
 
 People say "I'm on it" in more ways than any rule can list. If the repository has an `ANTHROPIC_API_KEY`
-secret, every issue the rules call free gets a second look from a small Claude model, which reads the
+or `OPENAI_API_KEY` secret, every issue the rules call free gets a second look from a small Claude or
+ChatGPT model, which reads the
 description, comments, linked PRs and age and answers **free**, **taken** (someone owns it, has a draft
 or branch, or is iterating on the design) or **not ready** (needs a maintainer decision, depends on other
 work, is an umbrella issue or looks obsolete).
@@ -106,6 +107,16 @@ handful a day. Issues the model couldn't judge (an error, or the call budget ran
 ```
 gh secret set ANTHROPIC_API_KEY -R <you>/oss-scout
 ```
+
+or, for ChatGPT:
+
+```
+gh secret set OPENAI_API_KEY -R <you>/oss-scout
+```
+
+With both keys set, Claude is used unless `"ai": {"provider": "openai"}` says otherwise. With a provider
+set but only the other key present, that one is used (with its default model) and the job log says so. Either way scout does the
+GitHub reading itself; the model only judges what was fetched.
 
 Use a key made just for oss-scout, so it has its own spend limit and can be revoked on its own. Without
 the secret, or with `"ai": {"enabled": false}`, the board works exactly as before.
@@ -143,6 +154,22 @@ Others can also copy the repo and point it at their own areas.
 
 To watch a whole repository rather than some of its labels, leave `labels` out:
 `{"repo": "open-telemetry/opentelemetry-cpp"}`.
+
+For a big repo that doesn't label by component, narrow it down with `keywords` and `paths`:
+
+```json
+{"repo": "opensearch-project/data-prepper",
+ "keywords": ["otel", "otlp", "prometheus"],
+ "paths": ["data-prepper-plugins/otel-", "data-prepper-plugins/prometheus-"],
+ "stale_review_days": 2}
+```
+
+Issues then need a keyword in the title or labels (`otel` matches `otel_trace_source`), and so do new
+issues on the triage list. PRs need a keyword in the title or labels, or must change a file whose path
+starts with one of `paths`; the files are only read for PRs old enough for the review list. A repo's own
+`stale_review_days` overrides the global one. In such a repo, PRs by bots (dependency bumps) never make
+the review list, and `review_max_age_days` leaves out PRs opened longer ago than that, which are
+usually abandoned.
 
 To look across whole organisations, add a `discover` block:
 
@@ -227,7 +254,7 @@ email and the GitHub app), and the board lists it under **Watching** until the w
 | Key | Default | Meaning |
 |---|---|---|
 | `github_user` | required | Your GitHub handle, used for review requests, your activity and your claims |
-| `repos` | required | List of `{"repo": "owner/name", "labels": [...]}` |
+| `repos` | required | List of `{"repo": "owner/name", "labels": [...]}`; without labels, optionally `keywords`, `paths` and `stale_review_days` (see [Settings](#settings)) |
 | `deliver` | `["github"]` | `"github"` (board issue) and/or `"slack"` |
 | `board_repo` | the repo the workflow runs in | Where the board issue lives |
 | `quiet_days` | 45 | Days without a PR before a claim counts as quiet |
@@ -249,9 +276,10 @@ email and the GitHub app), and the board lists it under **Watching** until the w
 | `watches` | none | One-off things to look out for; see [Watches](#watches) |
 | `triage.max_checks` | 150 | Cap on issues whose comments and linked PRs are read per run; the rest are read on later runs |
 | `ai.enabled` | true when the key is set | Set `false` to skip the AI check even with a key |
-| `ai.model` | `claude-haiku-5-5` | Model for the AI check |
+| `ai.provider` | Anthropic if its key is set, else OpenAI | `"anthropic"` (Claude) or `"openai"` (ChatGPT) |
+| `ai.model` | `claude-haiku-5-5`, or `gpt-5-mini` for OpenAI | Model for the AI check |
 | `ai.max_calls` | 40 | Most AI calls per run; the rest are judged on later runs |
-| `ai.max_tokens` | 1024 | Most tokens the model may write per answer; the answer is one short JSON line |
+| `ai.max_tokens` | 1024, or 4000 for OpenAI | Most tokens the model may write per answer; the answer is one short JSON line, but OpenAI's reasoning models count their thinking too |
 | `blocking_labels` | see `scout/classify.py` | Labels that mean the issue is waiting on a decision |
 | `board_section_limit` | 25 | Items listed per board section; the rest are counted |
 | `board_max_comments` | 100 | After this many comments, the board moves to a fresh issue and the old one is closed with a link |

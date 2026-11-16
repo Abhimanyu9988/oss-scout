@@ -54,22 +54,45 @@ def iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _mentions(item, words):
+    """True if a word starts a word in the title or labels ("otel" matches "otel_trace_source")."""
+    hay = " ".join([item.get("title", "")] + [lbl["name"] for lbl in item.get("labels", [])])
+    return any(re.search(rf"(?<![a-z0-9]){re.escape(w)}", hay, re.I) for w in words)
+
+
 def scan_candidates(gh, cfg, now, errors, prs=None):
     """Every open, unassigned issue under the configured labels, classified.
     If `prs` is a dict, open PRs under the same labels are collected into it as
-    key -> (repo, label, pr)."""
+    key -> (repo, label, pr).
+
+    A repo with no labels but with `keywords` or `paths` is watched as a whole and narrowed
+    down: issues must name a keyword in the title or labels; PRs must do the same or touch a
+    file under one of `paths`. The file check is left to unreviewed_prs, which only makes it
+    for PRs that could make the review list, so a busy repo doesn't cost a call per PR."""
     seen, out = set(), []
     for repo_cfg in cfg["repos"]:
         repo = repo_cfg["repo"]
-        for label in repo_cfg.get("labels") or [None]:      # no labels: watch the whole repo
+        labels = repo_cfg.get("labels") or []
+        words = [] if labels else list(repo_cfg.get("keywords") or [])
+        paths = [] if labels else list(repo_cfg.get("paths") or [])
+        for label in labels or [None]:                       # no labels: watch the whole repo
             tag = label or repo.split("/")[-1]
+            limit = cfg.get("max_issues_per_label", 60)
             try:
-                issues, label_prs = gh.open_items(repo, label, limit=cfg.get("max_issues_per_label", 60))
+                if words or paths:            # read deeper, since most of the repo is filtered out
+                    issues, label_prs = gh.open_items(repo, None, limit=1000, max_pages=10)
+                    issues = [i for i in issues if _mentions(i, words)][:limit]
+                else:
+                    issues, label_prs = gh.open_items(repo, label, limit=limit)
             except GitHubError as err:
                 errors.append(f"{repo} label '{tag}': {err}")
                 continue
             if prs is not None:
                 for pr in label_prs:
+                    if (words or paths) and not _mentions(pr, words):
+                        if not paths:
+                            continue
+                        pr = dict(pr, _scout_paths=paths)   # decided by its files, if it gets that far
                     prs.setdefault(f"{repo}#{pr['number']}", (repo, tag, pr))
             for issue in issues:
                 cand = Candidate.from_issue(repo, issue, tag)
@@ -101,21 +124,47 @@ def review_requests(gh, cfg):
     return gh.search_issues(q, limit=50)
 
 
+def review_days(cfg):
+    """{repo: days} for repos that set their own `stale_review_days`, and the shortest wait overall."""
+    default = cfg.get("stale_review_days", 7)
+    own = {r["repo"]: r["stale_review_days"] for r in cfg["repos"] if "stale_review_days" in r}
+    return own, min([default] + list(own.values()))
+
+
 def unreviewed_prs(gh, cfg, now, prs, already_reported, errors):
     """Open, non-draft PRs in your labels, older than N days, not yours, with no review
     from anyone but the author. PRs already reported stay in the set while they are open
-    without re-checking, so each run only fetches reviews for new candidates."""
-    cutoff = now - timedelta(days=cfg.get("stale_review_days", 7))
+    without re-checking, so each run only fetches reviews for new candidates. A repo can set
+    its own `stale_review_days`, and PRs matched only by `paths` have their files read here. In
+    a keyword- or path-narrowed repo, bot PRs and PRs older than `review_max_age_days` are left out."""
+    own_days, _ = review_days(cfg)
+    narrowed = {r["repo"]: r for r in cfg["repos"] if not r.get("labels") and (r.get("keywords") or r.get("paths"))}
     user = cfg["github_user"].lower()
     found = {}
     for key, (repo, label, pr) in prs.items():
         author = (pr.get("user") or {}).get("login", "")
+        cutoff = now - timedelta(days=own_days.get(repo, cfg.get("stale_review_days", 7)))
         if pr.get("draft") or author.lower() == user or parse_time(pr["created_at"]) > cutoff:
             continue
+        focus = narrowed.get(repo)
+        if focus:
+            # Dependency bumps aren't review openings, and a PR untouched for months is likely abandoned.
+            max_age = focus.get("review_max_age_days")
+            if author.endswith("[bot]") or (max_age and parse_time(pr["created_at"]) < now - timedelta(days=max_age)):
+                continue
         if key in already_reported:
             found[key] = (repo, label, pr)
             continue
         try:
+            if pr.get("_scout_paths"):
+                try:
+                    files = gh.pr_files(repo, pr["number"])
+                except GitHubError as err:
+                    if (err.status or 0) < 500:
+                        raise
+                    continue                  # GitHub won't list a very large diff; try again next run
+                if not any(f.get("filename", "").startswith(tuple(pr["_scout_paths"])) for f in files):
+                    continue
             reviews = gh.pr_reviews(repo, pr["number"])
         except GitHubError as err:
             errors.append(f"{key} reviews: {err}")
@@ -432,7 +481,10 @@ def _triage_scopes(cfg):
     scopes = []
     for r in cfg["repos"]:
         labels = r.get("labels") or []
-        scopes.append((r["repo"], labels, (words + list(r.get("keywords") or [])) if labels else []))
+        if labels:
+            scopes.append((r["repo"], labels, words + list(r.get("keywords") or [])))
+        else:                                  # a keyword-narrowed whole repo uses its own words only
+            scopes.append((r["repo"], [], list(r.get("keywords") or [])))
     for r in t.get("repos") or []:
         scopes.append((r["repo"], r.get("labels") or [], r.get("keywords") or []))
     return scopes
@@ -570,6 +622,8 @@ def _triage_item(key, it, where, repliers, user, now, prs=()):
         bits.append(_pr_note(prs, key.split("#")[0], user))
     if "needs triage" in names:
         bits.append("needs triage")
+    elif "untriaged" in names:
+        bits.append("untriaged")
     if unlabelled:
         bits.append("no component label")
     age = days_between(it.get("created_at") or it.get("updated_at") or iso(now), now)

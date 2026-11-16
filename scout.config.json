@@ -59,6 +59,29 @@
         "webhook",
         "operator"
       ]
+    },
+    {
+      "repo": "opensearch-project/data-prepper",
+      "keywords": [
+        "otel",
+        "otlp",
+        "opentelemetry",
+        "prometheus",
+        "span",
+        "trace",
+        "service map",
+        "service_map",
+        "apm",
+        "histogram",
+        "exemplar"
+      ],
+      "paths": [
+        "data-prepper-plugins/otel-",
+        "data-prepper-plugins/otlp-",
+        "data-prepper-plugins/prometheus-"
+      ],
+      "stale_review_days": 2,
+      "review_max_age_days": 90
     }
   ],
   "discover": {
@@ -115,7 +138,8 @@
     "waiting-for-code-owners",
     "discussion needed",
     "needs discussion",
-    "triage:needs-triage"
+    "triage:needs-triage",
+    "untriaged"
   ],
   "watches": [
     {
@@ -158,5 +182,8 @@
     "labs": "labs",
     "site": "https://showmerit.com/abhimanyu/articles/{slug}/",
     "max_calls": 3
+  },
+  "ai": {
+    "provider": "openai"
   }
 }
