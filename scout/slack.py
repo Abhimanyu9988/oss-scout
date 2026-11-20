@@ -13,8 +13,12 @@ def esc(text):
 
 
 def _line(item):
-    ref = item.key.split("/")[-1]  # "opentelemetry-collector-contrib#123"
-    number = "#" + ref.split("#")[-1]
+    if item.key.startswith("lab:"):
+        number = "lab"  # a finding from your own lab write-up, not an upstream issue
+    elif "#" in item.key:
+        number = "#" + item.key.rsplit("#", 1)[-1]  # "open-telemetry/opentelemetry-collector-contrib#123"
+    else:
+        number = item.key
     title = item.title if len(item.title) <= 90 else item.title[:87] + "..."
     detail = f" — {esc(item.detail)}" if item.detail else ""
     return f"• <{item.url}|{number}> {esc(title)}{detail}"

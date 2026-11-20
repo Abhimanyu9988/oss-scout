@@ -136,10 +136,6 @@ class CliDeliveryTest(unittest.TestCase):
         self.assertTrue(any(c[0] == "create" for c in w.calls))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class FreshCopyTest(unittest.TestCase):
     def test_template_copy_adopts_its_owner(self):
         from scout.cli import adopt_fresh_copy
@@ -213,3 +209,26 @@ class LayoutTest(unittest.TestCase):
         self.assertNotIn("<details>", needs.split("## To triage")[0])          # always open
         self.assertEqual(body.count("<details>"), body.count("</details>"))
         self.assertIn("<details>\n<summary><b>Free in your areas (1)</b></summary>", body)
+
+
+class LabItemInNeedsYouTest(unittest.TestCase):
+    """20 Nov 2026: the first run that announced lab findings crashed in render_comment, because
+    a lab key (lab:<slug>:0) has no '#' for _ref to split on."""
+
+    def test_comment_and_slack_render_a_lab_finding(self):
+        from scout import slack
+        from scout.digest import Item
+        digest, _ = baseline()
+        url = "https://example.com/abhimanyu/articles/count-flink-restarts/"
+        digest.needs_you.append(Item("lab:count-flink-restarts:0", url,
+                                     "opentelemetry-collector-contrib receiver/flinkmetrics: add a restart metric",
+                                     "worth filing upstream (enhancement), from your lab"))
+        comment = board.render_comment(digest, CFG, NOW)
+        self.assertIn(f"- [lab]({board.quiet_link(url)})", comment)
+        text = slack.to_plain_text(slack.build_payload(digest, "Contrib scout", "Fri 20 Nov"))
+        self.assertIn(f"<{url}|lab>", text)
+        self.assertNotIn("#lab:", text)
+
+
+if __name__ == "__main__":
+    unittest.main()
