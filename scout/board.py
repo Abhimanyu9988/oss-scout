@@ -42,6 +42,11 @@ def safe(text):
 
 
 def _ref(key):
+    """Short link text for an item key: "repo 123" for owner/repo#123, "lab" for a lab finding."""
+    if key.startswith("lab:"):
+        return "lab"
+    if "#" not in key:
+        return key
     repo, number = key.rsplit("#", 1)
     return f"{repo.split('/')[-1]} {number}"
 
